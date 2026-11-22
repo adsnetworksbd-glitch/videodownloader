@@ -6,9 +6,11 @@ from ..config import get_settings
 from ..crud import (
     SETTING_WHITELIST,
     ban_ip,
+    create_api_key,
     delete_message,
     delete_order,
     delete_package,
+    list_api_keys,
     list_orders,
     effective_int,
     get_overrides,
@@ -25,8 +27,11 @@ from ..crud import (
 )
 from ..database import get_db
 from ..deps import require_admin
-from ..models import BannedIP, ContactMessage, DownloadJob, ProPackage, Provider, utcnow
+from ..models import ApiKey, BannedIP, ContactMessage, DownloadJob, ProPackage, Provider, utcnow
 from ..schemas import (
+    ApiKeyCreate,
+    ApiKeyOut,
+    ApiKeyUpdate,
     BanIn,
     BanOut,
     ContactMessageOut,
@@ -229,6 +234,37 @@ async def remove_package(package_id: int, db: AsyncSession = Depends(get_db)):
 @router.get("/orders", response_model=list[ProOrderOut])
 async def admin_orders(limit: int = Query(default=200, ge=1, le=500), db: AsyncSession = Depends(get_db)):
     return await list_orders(db, limit=limit)
+
+
+@router.get("/apikeys", response_model=list[ApiKeyOut])
+async def admin_api_keys(limit: int = Query(default=200, ge=1, le=500), db: AsyncSession = Depends(get_db)):
+    return await list_api_keys(db, limit=limit)
+
+
+@router.post("/apikeys", response_model=ApiKeyOut, status_code=status.HTTP_201_CREATED)
+async def admin_create_api_key(data: ApiKeyCreate, db: AsyncSession = Depends(get_db)):
+    return await create_api_key(db, data.label)
+
+
+@router.patch("/apikeys/{key}", response_model=ApiKeyOut)
+async def admin_toggle_api_key(key: str, data: ApiKeyUpdate, db: AsyncSession = Depends(get_db)):
+    row = await db.get(ApiKey, key)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="api key not found")
+    if data.is_active is not None:
+        row.is_active = data.is_active
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+@router.delete("/apikeys/{key}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_api_key(key: str, db: AsyncSession = Depends(get_db)):
+    row = await db.get(ApiKey, key)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="api key not found")
+    await db.delete(row)
+    await db.commit()
 
 
 @router.patch("/orders/{order_id}", response_model=ProOrderOut)

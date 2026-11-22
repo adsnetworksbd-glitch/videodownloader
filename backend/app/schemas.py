@@ -152,6 +152,24 @@ class ContactCreated(BaseModel):
     received: bool = True
 
 
+class ApiKeyCreate(BaseModel):
+    label: str | None = Field(default=None, max_length=255)
+
+
+class ApiKeyUpdate(BaseModel):
+    is_active: bool | None = None
+
+
+class ApiKeyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str | None
+    is_active: bool
+    last_used_at: datetime | None
+    created_at: datetime
+
+
 class BanIn(BaseModel):
     ip: str = Field(min_length=3, max_length=64)
     reason: str | None = Field(default=None, max_length=255)

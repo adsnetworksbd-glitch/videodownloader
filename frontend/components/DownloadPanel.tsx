@@ -20,8 +20,10 @@ type Info = {
   filesize: number | null;
   formats: VideoFormat[];
   audio_only_available: boolean;
+  subtitles?: SubtitleTrack[];
 };
 type PlaylistItem = { title: string | null; duration: number | null; thumbnail: string | null; url: string | null };
+type SubtitleTrack = { lang: string; ext: string; url: string };
 type Playlist = { title: string | null; count: number; total_count: number; pro_required?: boolean; items: PlaylistItem[] };
 type DirectLink = { direct: boolean; url: string; ext: string; quality: string; filesize: number | null; filename: string };
 
@@ -620,6 +622,27 @@ export default function DownloadPanel() {
                         {tt(lang, "chip_best")}
                       </button>
                     </div>
+                  )}
+
+                  {(info.subtitles || []).length > 0 && (
+                    <>
+                      <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-secondary/70">Subtitles</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {info.subtitles!.map((track) => (
+                          <a
+                            key={`${track.lang}-${track.ext}`}
+                            href={track.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="chip"
+                            title={`Download ${track.lang} subtitles (.${track.ext})`}
+                          >
+                            {track.lang} .{track.ext}
+                          </a>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[11px] text-secondary/70">Saves from the source site - keep the video and subtitle file together.</p>
+                    </>
                   )}
 
                   {info.audio_only_available && (

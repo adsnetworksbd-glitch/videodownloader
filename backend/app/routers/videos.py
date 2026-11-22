@@ -60,8 +60,7 @@ def _direct_format(entry: dict, quality: str) -> dict | None:
     return None
 
 
-@router.get("")
-async def video_info(url: str = Query(min_length=8, max_length=1024)):
+async def _extract_entry(url: str) -> dict:
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url must start with http(s)://")
     try:
@@ -71,7 +70,7 @@ async def video_info(url: str = Query(min_length=8, max_length=1024)):
 
     loop = asyncio.get_running_loop()
     try:
-        info = await loop.run_in_executor(
+        return await loop.run_in_executor(
             None,
             lambda: extract_info_sync(url, get_settings().provider_default_timeout),
         )
@@ -82,7 +81,32 @@ async def video_info(url: str = Query(min_length=8, max_length=1024)):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"extraction failed: {type(exc).__name__}: {exc}"[:500],
         )
-    return summarize(info)
+
+
+def _subtitle_tracks(entry: dict) -> list[dict]:
+    picks: list[dict] = []
+    for lang, tracks in (entry.get("subtitles") or {}).items():
+        best = None
+        for track in tracks or []:
+            sub_url = track.get("url")
+            sub_ext = track.get("ext") or ""
+            score = {"vtt": 4, "srt": 3, "srv3": 2, "ttml": 1}.get(sub_ext, 0)
+            if not sub_url or score == 0:
+                continue
+            if best is None or score > best[0]:
+                best = (score, sub_ext, sub_url)
+        if best:
+            picks.append({"lang": lang, "ext": best[1], "url": best[2]})
+    priority = {"en": 0, "bn": 1, "hi": 2}
+    picks.sort(key=lambda item: (priority.get(item["lang"], 9), item["lang"]))
+    return picks[:12]
+
+
+@router.get("")
+async def video_info(url: str = Query(min_length=8, max_length=1024)):
+    info = await _extract_entry(url)
+    entry = pick_entry(info)
+    return {**summarize(info), "subtitles": _subtitle_tracks(entry)}
 
 
 @router.get("/direct")
@@ -98,26 +122,7 @@ async def direct_link(
     ip = client_ip(request)
     if await is_banned(db, ip):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your access is restricted.")
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url must start with http(s)://")
-    try:
-        await asyncio.to_thread(assert_public_url, url)
-    except UnsafeUrlError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-    loop = asyncio.get_running_loop()
-    try:
-        info = await loop.run_in_executor(
-            None,
-            lambda: extract_info_sync(url, get_settings().provider_default_timeout),
-        )
-    except VideoResolutionError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"extraction failed: {type(exc).__name__}: {exc}"[:500],
-        )
+    info = await _extract_entry(url)
 
     entry = pick_entry(info)
     fmt = _direct_format(entry, quality)

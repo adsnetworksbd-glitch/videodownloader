@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, getAdminToken, setAdminToken } from "../../lib/api";
+import { resolveBrand } from "../../lib/brand-lookup";
 
 const ADAPTERS = ["http_mirror", "proxy_pass", "ytdlp"];
 
@@ -94,16 +95,26 @@ type ProOrderRow = {
   created_at: string;
 };
 
-const SETTING_FIELDS: { key: string; label: string; hint: string }[] = [
-  { key: "free_daily_limit", label: "Free daily limit", hint: "Downloads per IP per day without Pro" },
-  { key: "pro_daily_limit", label: "Pro daily limit", hint: "Downloads per day for Pro users" },
-  { key: "free_playlist_items", label: "Free playlist items", hint: "Playlist items free users can grab" },
-  { key: "rate_limit_requests", label: "Rate limit requests", hint: "Requests per window (needs restart)" },
-  { key: "rate_limit_window", label: "Rate limit window (s)", hint: "Window length in seconds (needs restart)" },
-  { key: "pro_instant_activation", label: "Instant key (1/0)", hint: "1 = key activates immediately on purchase; 0 = approve manually in Package orders" },
+type ApiKeyRow = {
+  key: string;
+  label: string | null;
+  is_active: boolean;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+const SETTING_FIELDS: { key: string; label: string; hint: string; kind: "number" | "text" }[] = [
+  { key: "free_daily_limit", label: "Free daily limit", hint: "Downloads per IP per day without Pro", kind: "number" },
+  { key: "pro_daily_limit", label: "Pro daily limit", hint: "Downloads per day for Pro users", kind: "number" },
+  { key: "free_playlist_items", label: "Free playlist items", hint: "Playlist items free users can grab", kind: "number" },
+  { key: "rate_limit_requests", label: "Rate limit requests", hint: "Requests per window (needs restart)", kind: "number" },
+  { key: "rate_limit_window", label: "Rate limit window (s)", hint: "Window length in seconds (needs restart)", kind: "number" },
+  { key: "pro_instant_activation", label: "Instant key (1/0)", hint: "1 = key activates immediately on purchase; 0 = approve manually in Package orders", kind: "number" },
+  { key: "telegram_alert_chat_id", label: "Telegram chat ID", hint: "New orders/messages are also sent to this chat (bot token lives in backend env)", kind: "text" },
 ];
 
 const SETTING_DEFAULTS: Record<string, string> = {
+  telegram_alert_chat_id: "",
   free_daily_limit: "100",
   pro_daily_limit: "1000",
   free_playlist_items: "10",
@@ -152,6 +163,8 @@ export default function AdminPage() {
   const [proPackages, setProPackages] = useState<ProPkg[]>([]);
   const [pkgForm, setPkgForm] = useState({ name: "", price: "", duration_days: "30", description: "" });
   const [proOrders, setProOrders] = useState<ProOrderRow[]>([]);
+  const [apiKeys, setApiKeys] = useState<ApiKeyRow[]>([]);
+  const [apiKeyForm, setApiKeyForm] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>(SETTING_DEFAULTS);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [messages, setMessages] = useState<AdminMessage[] | null>(null);
@@ -192,12 +205,14 @@ export default function AdminPage() {
   const loadProData = useCallback(async () => {
     if (!authed) return;
     try {
-      const [pkgs, orders] = await Promise.all([
+      const [pkgs, orders, keys] = await Promise.all([
         apiFetch<ProPkg[]>("/api/admin/packages", { admin: true }),
         apiFetch<ProOrderRow[]>("/api/admin/orders?limit=200", { admin: true }),
+        apiFetch<ApiKeyRow[]>("/api/admin/apikeys", { admin: true }),
       ]);
       setProPackages(pkgs);
       setProOrders(orders);
+      setApiKeys(keys);
     } catch {}
   }, [authed]);
 
@@ -267,6 +282,42 @@ export default function AdminPage() {
     if (!window.confirm("Delete this order?")) return;
     try {
       await apiFetch(`/api/admin/orders/${order.id}`, { method: "DELETE", admin: true });
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const createApiKey = async () => {
+    setError("");
+    setMessage("");
+    try {
+      const created = await apiFetch<ApiKeyRow>("/api/admin/apikeys", {
+        method: "POST",
+        body: { label: apiKeyForm.trim() || null },
+        admin: true,
+      });
+      setApiKeyForm("");
+      setMessage(`API key created - copy it now: ${created.key}`);
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const toggleApiKey = async (row: ApiKeyRow) => {
+    try {
+      await apiFetch(`/api/admin/apikeys/${row.key}`, { method: "PATCH", body: { is_active: !row.is_active }, admin: true });
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const deleteApiKey = async (row: ApiKeyRow) => {
+    if (!window.confirm("Delete this API key? Clients using it stop working immediately.")) return;
+    try {
+      await apiFetch(`/api/admin/apikeys/${row.key}`, { method: "DELETE", admin: true });
       await loadProData();
     } catch (err) {
       setError((err as Error).message);
@@ -598,12 +649,20 @@ export default function AdminPage() {
             <div className="mt-4">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70">Trending sources</p>
               <ul className="mt-2 space-y-1 text-xs text-secondary">
-                {stats.trending.map((entry) => (
-                  <li key={entry.domain} className="flex items-center justify-between gap-4">
-                    <span className="truncate font-mono">{entry.domain}</span>
-                    <span className="text-secondary/70">{entry.downloads}</span>
-                  </li>
-                ))}
+                {stats.trending.map((entry) => {
+                  const brand = resolveBrand(entry.domain);
+                  return (
+                    <li key={entry.domain} className="flex items-center justify-between gap-4">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                          <brand.Icon className="h-3.5 w-3.5" style={{ color: brand.color }} />
+                        </span>
+                        <span className="truncate font-mono">{entry.domain}</span>
+                      </span>
+                      <span className="text-secondary/70">{entry.downloads}</span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -755,6 +814,63 @@ export default function AdminPage() {
 
       <div className="glass mt-6 p-4 sm:p-6">
         <h2 className="text-lg font-bold">
+          Developer <span className="gradient-text">API keys</span>
+        </h2>
+        <p className="mt-1 text-xs text-secondary">
+          Partners call <code className="text-cyan-glow">GET /api/v1/info?url=...</code> and <code className="text-cyan-glow">GET /api/v1/direct?url=...</code> with the header X-API-Key.
+        </p>
+        <form
+          className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void createApiKey();
+          }}
+        >
+          <div className="grow">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-secondary/70" htmlFor="apikey-label">
+              Label (who uses it)
+            </label>
+            <input
+              id="apikey-label"
+              className="field"
+              placeholder="partner app / client name"
+              value={apiKeyForm}
+              onChange={(e) => setApiKeyForm(e.target.value)}
+              maxLength={255}
+            />
+          </div>
+          <button type="submit" className="btn-primary">Create API key</button>
+        </form>
+        <ul className="mt-4">
+          {apiKeys.map((row) => (
+            <li key={row.key} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/5 py-2 text-sm">
+              <code className="font-mono text-xs text-cyan-glow">{row.key}</code>
+              <span className="max-w-[220px] truncate text-xs text-secondary">{row.label || "no label"}</span>
+              <span className={`pill-flow ${row.is_active ? "border-emerald-500/40 text-emerald-300" : "border-white/15 text-secondary"}`}>
+                {row.is_active ? "active" : "inactive"}
+              </span>
+              <span className="ml-auto flex gap-2">
+                <button type="button" className="btn-ghost !px-2.5 !py-1 text-[11px]" onClick={() => void toggleApiKey(row)}>
+                  {row.is_active ? "Disable" : "Enable"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px] !border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                  onClick={() => void deleteApiKey(row)}
+                >
+                  Delete
+                </button>
+              </span>
+            </li>
+          ))}
+          {apiKeys.length === 0 && (
+            <li className="px-2 py-6 text-center text-xs text-secondary">No API keys yet - create one above for developer partners.</li>
+          )}
+        </ul>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <h2 className="text-lg font-bold">
           Pro <span className="gradient-text">packages</span>
         </h2>
         <p className="mt-1 text-xs text-secondary">
@@ -831,8 +947,8 @@ export default function AdminPage() {
               <label key={field.key} className="block">
                 <span className="mb-1.5 block text-xs text-secondary">{field.label}</span>
                 <input
-                  type="number"
-                  min={0}
+                  type={field.kind}
+                  min={field.kind === "number" ? 0 : undefined}
                   className="field"
                   value={settings[field.key] ?? ""}
                   onChange={(e) => setSettings({ ...settings, [field.key]: e.target.value })}

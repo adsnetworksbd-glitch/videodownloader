@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { width: 320px; margin: 0; padding: 14px; font-family: system-ui, sans-serif; background: #020b1b; color: #fff; }
+      h1 { font-size: 14px; margin: 0 0 10px; }
+      h1 span { color: #00cfff; }
+      label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: #a8b8d0; margin: 10px 0 4px; }
+      input, select, button { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: #0b1930; color: #fff; padding: 8px 10px; font-size: 13px; }
+      button { margin-top: 10px; border: none; background: linear-gradient(135deg, #087bff, #00cfff); font-weight: 700; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: wait; }
+      #status { margin-top: 10px; font-size: 12px; color: #a8b8d0; min-height: 32px; white-space: pre-wrap; word-break: break-all; }
+      a { color: #00cfff; }
+    </style>
+  </head>
+  <body>
+    <h1>Quick <span>Grab</span></h1>
+    <label for="backend">Backend URL</label>
+    <input id="backend" placeholder="http://localhost:8000" />
+    <label for="pageurl">Video URL</label>
+    <input id="pageurl" placeholder="paste a video link" />
+    <label for="quality">Quality</label>
+    <select id="quality">
+      <option value="">best</option>
+      <option value="1080p">1080p</option>
+      <option value="720p">720p</option>
+      <option value="480p">480p</option>
+      <option value="360p">360p</option>
+      <option value="audio">audio only</option>
+    </select>
+    <button id="go">Get direct link</button>
+    <div id="status"></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

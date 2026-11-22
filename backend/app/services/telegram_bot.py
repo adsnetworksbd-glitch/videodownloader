@@ -5,7 +5,7 @@ import os
 import httpx
 
 from ..config import get_settings
-from ..crud import list_providers
+from ..crud import get_overrides, list_providers
 from ..database import session_maker
 from ..models import DownloadJob, utcnow
 from . import video_service as vs
@@ -125,3 +125,20 @@ def start_bot_task() -> asyncio.Task | None:
     if not get_settings().telegram_bot_token:
         return None
     return asyncio.get_running_loop().create_task(poll_forever())
+
+
+async def send_admin_alert(text: str) -> None:
+    """Notify the admin Telegram chat (best effort, never raises)."""
+    token = get_settings().telegram_bot_token
+    if not token:
+        return
+    async with session_maker() as session:
+        overrides = await get_overrides(session)
+    chat_id = (overrides.get("telegram_alert_chat_id") or "").strip()
+    if not chat_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await _post(client, token, "sendMessage", chat_id=chat_id, text=text[:3500])
+    except Exception:
+        log.warning("telegram admin alert failed", exc_info=True)

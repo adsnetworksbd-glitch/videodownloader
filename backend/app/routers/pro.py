@@ -1,4 +1,6 @@
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
@@ -14,6 +16,7 @@ from ..crud import (
 )
 from ..database import get_db
 from ..deps import client_ip
+from ..services.telegram_bot import send_admin_alert
 from ..models import ProPackage, ProOrder, utcnow
 
 router = APIRouter(prefix="/api/pro", tags=["pro"])
@@ -97,6 +100,12 @@ async def purchase(data: PurchaseRequest, request: Request, db: AsyncSession = D
     db.add(order)
     await db.commit()
     await db.refresh(order)
+    asyncio.create_task(
+        send_admin_alert(
+            f"New Pro purchase\nPackage: {package.name} ({package.price} Tk)\n"
+            f"TXID: {data.txid}\nContact: {data.contact or '-'}\nStatus: {order.status}"
+        )
+    )
     return {
         "status": order.status,
         "key": license.key,

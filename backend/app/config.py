@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     pro_daily_limit: int = 1000
     free_playlist_items: int = 10
     telegram_bot_token: str = ""
+    telegram_alert_chat_id: str = ""
     pro_instant_activation: int = 1
 
 

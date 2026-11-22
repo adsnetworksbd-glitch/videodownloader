@@ -5,6 +5,7 @@ import pytest
 from app.models import Provider
 from app.providers import VideoResolutionError
 from app.providers import ytdlp as ytdlp_mod
+from app.routers.videos import _subtitle_tracks
 from app.providers.ytdlp import YtDlpAdapter, pick_entry, sanitize_filename, summarize
 
 FAKE_INFO = {
@@ -235,6 +236,35 @@ async def test_direct_link_falls_back_to_server_when_dash_only(client, monkeypat
     )
     assert response.status_code == 404
     assert "no direct format" in response.json()["detail"]
+
+
+def test_subtitle_tracks_prefers_vtt_and_language():
+    entry = dict(
+        FAKE_INFO,
+        subtitles={
+            "hi": [{"ext": "ttml", "url": "https://s.example/hi.ttml"}],
+            "en": [
+                {"ext": "srv3", "url": "https://s.example/en.srv3"},
+                {"ext": "vtt", "url": "https://s.example/en.vtt"},
+            ],
+            "junk": [{"ext": "json3", "url": "https://s.example/junk.json3"}],
+        },
+    )
+    tracks = _subtitle_tracks(entry)
+    assert [t["lang"] for t in tracks] == ["en", "hi"]
+    assert tracks[0]["ext"] == "vtt"
+    assert tracks[0]["url"] == "https://s.example/en.vtt"
+
+
+async def test_info_includes_subtitles(client, monkeypatch):
+    info = dict(FAKE_INFO, subtitles={"en": [{"ext": "vtt", "url": "https://s.example/en.vtt"}]})
+    _patch_extract(monkeypatch, info)
+
+    response = await client.get("/api/info?url=https://www.youtube.com/watch?v=abc")
+    assert response.status_code == 200
+    assert response.json()["subtitles"] == [
+        {"lang": "en", "ext": "vtt", "url": "https://s.example/en.vtt"}
+    ]
 
 
 async def test_direct_link_best_quality(client, monkeypatch):

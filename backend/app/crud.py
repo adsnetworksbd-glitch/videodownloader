@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import BannedIP, ContactMessage, DownloadJob, LicenseKey, ProOrder, ProPackage, Provider, SiteSetting, utcnow
+from .models import ApiKey, BannedIP, ContactMessage, DownloadJob, LicenseKey, ProOrder, ProPackage, Provider, SiteSetting, utcnow
 from .schemas import ContactMessageIn, ProviderCreate, ProviderUpdate
 
 
@@ -121,6 +121,7 @@ SETTING_WHITELIST: dict[str, str] = {
     "rate_limit_window": "int",
     "notice_message": "text",
     "pro_instant_activation": "int",
+    "telegram_alert_chat_id": "text",
 }
 
 
@@ -251,6 +252,28 @@ async def set_order_status(db: AsyncSession, order_id: int, status: str) -> ProO
     await db.commit()
     await db.refresh(order)
     return order
+
+
+async def valid_api_key(db: AsyncSession, key: str) -> ApiKey | None:
+    row = await db.get(ApiKey, key)
+    if row is None or not row.is_active:
+        return None
+    return row
+
+
+async def create_api_key(db: AsyncSession, label: str | None) -> ApiKey:
+    import secrets
+
+    row = ApiKey(key=f"VDDEV-{secrets.token_hex(8).upper()}", label=label, is_active=True)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def list_api_keys(db: AsyncSession, limit: int = 200) -> list[ApiKey]:
+    result = await db.execute(select(ApiKey).order_by(ApiKey.created_at.desc()).limit(limit))
+    return list(result.scalars().all())
 
 
 async def delete_order(db: AsyncSession, order_id: int) -> bool:

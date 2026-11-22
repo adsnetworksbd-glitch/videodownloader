@@ -150,6 +150,13 @@ Admin auth: send header `X-Admin-Token: <ADMIN_TOKEN>`. Errors: no active provid
 **503** `no_providers_available`; every provider failed → **502** with the attempts log;
 unknown adapter → **500**.
 
+## Browser extension
+
+A Chrome/Edge popup extension ships in `extension/`: it grabs a direct CDN link for the
+video in the current tab via `/api/info/direct` (server spends zero media bandwidth) and
+falls back to opening the site when a server-side merge is needed. See
+`extension/README.md` for the 2-minute install (Load unpacked).
+
 ## Deployment notes (production)
 
 - **Always change `ADMIN_TOKEN`** — it is a single shared secret; without changing it anyone

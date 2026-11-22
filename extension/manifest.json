@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "VideoDownloader Quick Grab",
+  "version": "1.0.0",
+  "description": "Grab a direct download link for the video in your current tab via your own VideoDownloader backend.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Quick Grab"
+  },
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["http://*/*", "https://*/*"]
+}
