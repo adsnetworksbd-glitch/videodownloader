@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import glob
+import itertools
 import json
 import os
 import shutil
@@ -14,9 +15,13 @@ from ..models import DownloadJob, Provider, utcnow
 
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
-_ytdlp_sema: asyncio.Semaphore | None = None
 _inflight: set[str] = set()
 _job_cookies: dict[str, str] = {}
+_queue: asyncio.PriorityQueue | None = None
+_queue_loop: asyncio.AbstractEventLoop | None = None
+_workers: list[asyncio.Task] = []
+_worker_loop: asyncio.AbstractEventLoop | None = None
+_order = itertools.count()
 
 
 def set_job_cookies(job_id: str, cookies: str) -> None:
@@ -26,13 +31,6 @@ def set_job_cookies(job_id: str, cookies: str) -> None:
 
 def pop_job_cookies(job_id: str) -> str | None:
     return _job_cookies.pop(job_id, None)
-
-
-def _semaphore() -> asyncio.Semaphore:
-    global _ytdlp_sema
-    if _ytdlp_sema is None:
-        _ytdlp_sema = asyncio.Semaphore(get_settings().video_concurrent_downloads)
-    return _ytdlp_sema
 
 
 @functools.lru_cache(maxsize=1)
@@ -167,8 +165,37 @@ def has_video_provider(providers: list[Provider]) -> bool:
     return any(p.adapter == "ytdlp" for p in providers)
 
 
-def schedule_video_download(job_id: str) -> None:
-    asyncio.get_running_loop().create_task(run_video_download(job_id))
+def _priority_queue() -> asyncio.PriorityQueue:
+    global _queue, _queue_loop
+    loop = asyncio.get_running_loop()
+    if _queue is None or _queue_loop is not loop:
+        _queue = asyncio.PriorityQueue()
+        _queue_loop = loop
+    return _queue
+
+
+def schedule_video_download(job_id: str, priority: bool = False) -> None:
+    _priority_queue().put_nowait((0 if priority else 1, next(_order), job_id))
+    _ensure_workers()
+
+
+def _ensure_workers() -> None:
+    global _workers, _worker_loop
+    loop = asyncio.get_running_loop()
+    if _worker_loop is loop and all(not task.done() for task in _workers):
+        return
+    count = max(1, get_settings().video_concurrent_downloads)
+    _workers = [loop.create_task(_worker()) for _ in range(count)]
+    _worker_loop = loop
+
+
+async def _worker() -> None:
+    while True:
+        _, _, job_id = await _priority_queue().get()
+        try:
+            await run_video_download(job_id)
+        finally:
+            _priority_queue().task_done()
 
 
 async def run_video_download(job_id: str) -> None:
@@ -176,8 +203,7 @@ async def run_video_download(job_id: str) -> None:
         return
     _inflight.add(job_id)
     try:
-        async with _semaphore():
-            await _download_with_fallback(job_id)
+        await _download_with_fallback(job_id)
     finally:
         _inflight.discard(job_id)
 

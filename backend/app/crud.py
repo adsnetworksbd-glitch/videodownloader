@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import DownloadJob, LicenseKey, Provider, SiteSetting, utcnow
-from .schemas import ProviderCreate, ProviderUpdate
+from .models import BannedIP, ContactMessage, DownloadJob, LicenseKey, Provider, SiteSetting, utcnow
+from .schemas import ContactMessageIn, ProviderCreate, ProviderUpdate
 
 
 async def list_providers(db: AsyncSession, include_inactive: bool = True) -> list[Provider]:
@@ -146,3 +146,70 @@ async def effective_int(db: AsyncSession, key: str, default: int) -> int:
         return max(0, int(setting.value))
     except ValueError:
         return default
+
+
+async def is_banned(db: AsyncSession, ip: str) -> bool:
+    if not ip:
+        return False
+    return await db.get(BannedIP, ip) is not None
+
+
+async def list_banned(db: AsyncSession) -> list[BannedIP]:
+    result = await db.execute(select(BannedIP).order_by(BannedIP.created_at.desc()))
+    return list(result.scalars().all())
+
+
+async def ban_ip(db: AsyncSession, ip: str, reason: str | None) -> BannedIP:
+    entry = await db.get(BannedIP, ip)
+    if entry is None:
+        entry = BannedIP(ip=ip, reason=reason)
+        db.add(entry)
+    else:
+        entry.reason = reason
+    await db.commit()
+    await db.refresh(entry)
+    return entry
+
+
+async def unban_ip(db: AsyncSession, ip: str) -> bool:
+    entry = await db.get(BannedIP, ip)
+    if entry is None:
+        return False
+    await db.delete(entry)
+    await db.commit()
+    return True
+
+
+async def create_message(db: AsyncSession, data: ContactMessageIn) -> ContactMessage:
+    message = ContactMessage(kind=data.kind, name=data.name, phone=data.phone, txid=data.txid, body=data.body)
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+    return message
+
+
+async def list_messages(db: AsyncSession, limit: int = 100, kind: str | None = None) -> list[ContactMessage]:
+    statement = select(ContactMessage).order_by(ContactMessage.id.desc()).limit(limit)
+    if kind:
+        statement = statement.where(ContactMessage.kind == kind)
+    result = await db.execute(statement)
+    return list(result.scalars().all())
+
+
+async def mark_message_read(db: AsyncSession, message_id: int, is_read: bool) -> ContactMessage | None:
+    message = await db.get(ContactMessage, message_id)
+    if message is None:
+        return None
+    message.is_read = is_read
+    await db.commit()
+    await db.refresh(message)
+    return message
+
+
+async def delete_message(db: AsyncSession, message_id: int) -> bool:
+    message = await db.get(ContactMessage, message_id)
+    if message is None:
+        return False
+    await db.delete(message)
+    await db.commit()
+    return True

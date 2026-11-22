@@ -109,6 +109,7 @@ async def test_admin_stats_with_token(client):
 
 
 async def test_free_daily_limit_blocks_after_threshold(client, monkeypatch):
+    downloads_router._daily_counts.clear()
     monkeypatch.setattr(downloads_router, "get_settings", lambda: Settings(free_daily_limit=2))
     first = await client.post("/api/downloads", json={"resource": "https://youtu.be/a"})
     second = await client.post("/api/downloads", json={"resource": "https://youtu.be/b"})

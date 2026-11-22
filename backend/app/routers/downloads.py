@@ -10,8 +10,9 @@ from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import effective_int, list_jobs, valid_license
+from ..crud import effective_int, is_banned, list_jobs, valid_license
 from ..database import get_db
+from ..deps import client_ip
 from ..models import DownloadJob, utcnow
 from ..provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError, manager
 from ..schemas import DownloadCreate, DownloadJobOut
@@ -52,6 +53,9 @@ async def _get_job(db: AsyncSession, job_id: str) -> DownloadJob:
 
 @router.post("", response_model=DownloadJobOut, status_code=status.HTTP_201_CREATED)
 async def create_download(data: DownloadCreate, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = client_ip(request)
+    if await is_banned(db, ip):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your access is restricted.")
     settings = get_settings()
     license = await valid_license(db, request.headers.get("x-user-key") or "")
     if license:
@@ -75,7 +79,7 @@ async def create_download(data: DownloadCreate, request: Request, db: AsyncSessi
         job.started_at = utcnow()
         await db.commit()
         set_job_cookies(job.id, data.cookies or "")
-        schedule_video_download(job.id)
+        schedule_video_download(job.id, priority=license is not None)
     return job
 
 

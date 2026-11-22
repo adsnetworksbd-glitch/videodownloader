@@ -15,7 +15,18 @@ const NAV = [
   { href: "/#how-it-works", label: "How It Works" },
   { href: "/#faq", label: "FAQ" },
   { href: "/history", label: "History" },
+  { href: "/blog", label: "Guides" },
 ];
+
+const DEALS: { label: string; url: string }[] = (process.env.NEXT_PUBLIC_DEAL_LINKS || "")
+  .split("|")
+  .map((entry) => entry.trim())
+  .filter(Boolean)
+  .map((entry) => ({ label: entry.split("::")[0], url: entry.split("::")[1] }));
+
+const DONATION_BKASH = process.env.NEXT_PUBLIC_DONATION_BKASH || "";
+const DONATION_NAGAD = process.env.NEXT_PUBLIC_DONATION_NAGAD || "";
+const donationsOn = Boolean(DONATION_BKASH || DONATION_NAGAD);
 
 export default function Footer() {
   return (
@@ -40,6 +51,11 @@ export default function Footer() {
               {item.label}
             </Link>
           ))}
+          {DEALS.length > 0 && (
+            <Link href="/deals" className="text-secondary transition-colors hover:text-white">
+              Deals &amp; Tools
+            </Link>
+          )}
         </nav>
         <nav className="flex flex-col gap-3 text-sm md:items-end">
           <span className="mb-1 text-xs font-semibold uppercase tracking-widest text-secondary/70">Legal</span>
@@ -50,6 +66,19 @@ export default function Footer() {
           ))}
         </nav>
       </div>
+      {donationsOn && (
+        <div className="section-pad pb-2">
+          <div className="glass flex flex-wrap items-center gap-x-6 gap-y-2 p-4">
+            <p className="text-sm font-semibold">Enjoying the tool? A small donation keeps it fast and free. &hearts;</p>
+            {DONATION_BKASH && (
+              <span className="pill-flow border-pink-500/40 text-pink-300">bKash: <strong className="text-white">{DONATION_BKASH}</strong></span>
+            )}
+            {DONATION_NAGAD && (
+              <span className="pill-flow border-amber-500/40 text-amber-300">Nagad: <strong className="text-white">{DONATION_NAGAD}</strong></span>
+            )}
+          </div>
+        </div>
+      )}
       <div className="border-t border-white/5 py-5">
         <LiveStats />
         <p className="text-center text-xs text-secondary/70">

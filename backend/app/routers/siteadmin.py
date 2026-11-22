@@ -3,11 +3,25 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..config import get_settings
-from ..crud import SETTING_WHITELIST, effective_int, get_overrides, list_jobs, set_setting
+from ..crud import (
+    SETTING_WHITELIST,
+    ban_ip,
+    delete_message,
+    effective_int,
+    get_overrides,
+    list_banned,
+    list_jobs,
+    list_licenses,
+    list_messages,
+    list_providers,
+    mark_message_read,
+    set_setting,
+    unban_ip,
+)
 from ..database import get_db
 from ..deps import require_admin
-from ..models import DownloadJob, utcnow
-from ..schemas import DownloadJobOut
+from ..models import BannedIP, ContactMessage, DownloadJob, Provider, utcnow
+from ..schemas import BanIn, BanOut, ContactMessageOut, DownloadJobOut
 from ..services.video_service import schedule_video_download
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,3 +111,67 @@ async def retry_job(job_id: str, db: AsyncSession = Depends(get_db)):
     schedule_video_download(job.id)
     await db.refresh(job)
     return job
+
+
+@router.get("/bans", response_model=list[BanOut])
+async def bans(db: AsyncSession = Depends(get_db)):
+    return await list_banned(db)
+
+
+@router.post("/bans", response_model=BanOut, status_code=status.HTTP_201_CREATED)
+async def add_ban(payload: BanIn, db: AsyncSession = Depends(get_db)):
+    return await ban_ip(db, payload.ip.strip(), payload.reason)
+
+
+@router.delete("/bans/{ip}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_ban(ip: str, db: AsyncSession = Depends(get_db)):
+    if not await unban_ip(db, ip):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="ban not found")
+
+
+@router.get("/messages", response_model=list[ContactMessageOut])
+async def messages(kind: str | None = Query(default=None, pattern="^(message|pro_order)$"), limit: int = Query(default=100, ge=1, le=200), db: AsyncSession = Depends(get_db)):
+    return await list_messages(db, limit=limit, kind=kind)
+
+
+@router.patch("/messages/{message_id}", response_model=ContactMessageOut)
+async def read_message(message_id: int, payload: dict[str, bool], db: AsyncSession = Depends(get_db)):
+    message = await mark_message_read(db, message_id, bool(payload.get("is_read", True)))
+    if message is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
+    return message
+
+
+@router.delete("/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_message(message_id: int, db: AsyncSession = Depends(get_db)):
+    if not await delete_message(db, message_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="message not found")
+
+
+@router.get("/export")
+async def export_data(db: AsyncSession = Depends(get_db)):
+    providers = await list_providers(db)
+    licenses = await list_licenses(db)
+    bans = await list_banned(db)
+    return {
+        "exported_at": utcnow().isoformat(),
+        "providers": [
+            {
+                "name": provider.name,
+                "adapter": provider.adapter,
+                "base_url": provider.base_url,
+                "has_api_key": provider.api_key is not None,
+                "priority": provider.priority,
+                "is_active": provider.is_active,
+                "timeout_seconds": provider.timeout_seconds,
+                "last_status": provider.last_status,
+            }
+            for provider in providers
+        ],
+        "licenses": [
+            {"key": license.key, "plan": license.plan, "note": license.note, "is_active": license.is_active, "expires_at": license.expires_at.isoformat() if license.expires_at else None}
+            for license in licenses
+        ],
+        "bans": [{"ip": ban.ip, "reason": ban.reason} for ban in bans],
+        "settings": await get_overrides(db),
+    }

@@ -8,11 +8,12 @@ from .config import get_settings
 from .database import init_db
 from .middleware.ratelimit import RateLimitMiddleware
 from .provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError
-from .routers import catalog, downloads, licenses, media, pro, providers, siteadmin, stats, videos
+from .routers import catalog, contact, downloads, licenses, media, pro, providers, siteadmin, stats, videos
 
 logging.basicConfig(level=logging.INFO)
 
 
+from .services.telegram_bot import start_bot_task
 from .services.video_service import cleanup_stuck_jobs
 
 
@@ -20,7 +21,12 @@ from .services.video_service import cleanup_stuck_jobs
 async def lifespan(app: FastAPI):
     await init_db()
     await cleanup_stuck_jobs()
-    yield
+    bot_task = start_bot_task()
+    try:
+        yield
+    finally:
+        if bot_task:
+            bot_task.cancel()
 
 
 def create_app() -> FastAPI:
@@ -44,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(licenses.router)
     app.include_router(siteadmin.router)
     app.include_router(pro.router)
+    app.include_router(contact.router)
 
     @app.get("/health", tags=["ops"])
     async def health():

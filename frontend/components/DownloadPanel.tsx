@@ -87,6 +87,7 @@ export default function DownloadPanel() {
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [playlistSel, setPlaylistSel] = useState<Set<string>>(new Set());
   const [playlistProgress, setPlaylistProgress] = useState<{ done: number; total: number; current: string | null } | null>(null);
+  const [clipboardHint, setClipboardHint] = useState("");
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const confettiRef = useRef<HTMLDivElement | null>(null);
 
@@ -97,6 +98,21 @@ export default function DownloadPanel() {
     if (preset && /^https?:\/\//i.test(preset)) setUrl(preset);
     return () => {
       if (stepTimer.current) clearInterval(stepTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const permission = await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
+        if (permission.state !== "granted") return;
+        const text = (await navigator.clipboard.readText() || "").trim();
+        if (alive && /^https?:\/\//i.test(text)) setClipboardHint(text);
+      } catch {}
+    })();
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -115,6 +131,12 @@ export default function DownloadPanel() {
       container.appendChild(piece);
       setTimeout(() => piece.remove(), 2200);
     }
+  }
+
+  async function shareNow() {
+    try {
+      await navigator.share({ title: "VideoDownloader", text: "Download videos fast:", url: url.trim() || window.location.origin });
+    } catch {}
   }
 
   async function createJob(resource: string, quality: string, cookiesText: string) {
@@ -338,6 +360,31 @@ export default function DownloadPanel() {
           </button>
         </div>
 
+        {clipboardHint && !url.trim() && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-cyan-glow/40 bg-cyan-glow/10 px-4 py-2.5 text-sm">
+            <span className="text-white">Link detected on your clipboard</span>
+            <span className="min-w-0 grow truncate text-xs text-secondary/80">{clipboardHint}</span>
+            <button
+              type="button"
+              className="btn-primary !px-3 !py-1 !text-xs"
+              onClick={() => {
+                setUrl(clipboardHint);
+                setClipboardHint("");
+              }}
+            >
+              Use this link
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss clipboard suggestion"
+              className="text-secondary hover:text-white"
+              onClick={() => setClipboardHint("")}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {phase === "checking" && (
           <div className="mt-5 space-y-2" aria-live="polite">
             {STEPS.map((label, i) => (
@@ -526,15 +573,22 @@ export default function DownloadPanel() {
                     </>
                   )}
 
-                  {info.thumbnail && (
-                    <a
-                      className="btn-ghost mt-4 inline-flex w-full items-center justify-center gap-2 sm:w-auto"
-                      href={`/api/thumbnail?url=${encodeURIComponent(url.trim())}&download=true`}
-                      role="button"
-                    >
-                      Save thumbnail
-                    </a>
-                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {info.thumbnail && (
+                      <a
+                        className="btn-ghost inline-flex items-center justify-center gap-2"
+                        href={`/api/thumbnail?url=${encodeURIComponent(url.trim())}&download=true`}
+                        role="button"
+                      >
+                        Save thumbnail
+                      </a>
+                    )}
+                    {typeof navigator !== "undefined" && "share" in navigator && (
+                      <button type="button" className="btn-ghost inline-flex items-center justify-center gap-2" onClick={shareNow}>
+                        Share
+                      </button>
+                    )}
+                  </div>
 
                   <button type="button" className="btn-primary mt-2 block w-full sm:w-auto" onClick={() => startDownload(selected)} disabled={checking}>
                     <DownloadIcon className="h-4 w-4" />

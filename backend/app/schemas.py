@@ -124,3 +124,42 @@ class LicenseOut(BaseModel):
     expires_at: datetime | None
     redeemed_at: datetime | None
     created_at: datetime
+
+
+class ContactMessageIn(BaseModel):
+    kind: str = Field(default="message", pattern="^(message|pro_order)$")
+    name: str = Field(min_length=1, max_length=120)
+    phone: str | None = Field(default=None, max_length=40)
+    txid: str | None = Field(default=None, max_length=80)
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class ContactMessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: str
+    name: str
+    phone: str | None
+    txid: str | None
+    body: str
+    is_read: bool
+    created_at: datetime
+
+
+class ContactCreated(BaseModel):
+    id: int
+    received: bool = True
+
+
+class BanIn(BaseModel):
+    ip: str = Field(min_length=3, max_length=64)
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class BanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ip: str
+    reason: str | None
+    created_at: datetime

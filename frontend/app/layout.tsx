@@ -4,6 +4,7 @@ import BanglaBanner from "../components/BanglaBanner";
 import DownloadsHud from "../components/DownloadsHud";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
+import PwaRegister from "../components/PwaRegister";
 import SiteNotice from "../components/SiteNotice";
 
 export const metadata: Metadata = {
@@ -29,6 +30,10 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+export const viewport = {
+  themeColor: "#020B1B",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
@@ -46,6 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Footer />
         <BanglaBanner />
         <DownloadsHud />
+        <PwaRegister />
       </body>
     </html>
   );

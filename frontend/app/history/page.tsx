@@ -47,6 +47,17 @@ const STATUS_STYLE: Record<string, string> = {
 export default function HistoryPage() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [error, setError] = useState("");
+  const [filter, setFilter] = useState<"all" | "active" | "done" | "failed">("all");
+  const [query, setQuery] = useState("");
+
+  const filtered = (jobs || []).filter((job) => {
+    if (filter === "done" && !(job.status === "ready" || job.status === "completed")) return false;
+    if (filter === "failed" && job.status !== "failed") return false;
+    if (filter === "active" && !("queued downloading streaming pending".includes(job.status))) return false;
+    const q = query.trim().toLowerCase();
+    if (q && !(job.filename || "").toLowerCase().includes(q) && !job.resource.toLowerCase().includes(q)) return false;
+    return true;
+  });
 
   const load = useCallback(async () => {
     try {
@@ -78,7 +89,6 @@ export default function HistoryPage() {
   }
 
   const hasJobs = (jobs && jobs.length > 0) || false;
-
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -101,7 +111,29 @@ export default function HistoryPage() {
         </div>
       )}
 
-      <div className="glass mt-6 overflow-hidden">
+      <div className="glass mt-6 flex flex-wrap items-center gap-3 p-4">
+        <div className="flex flex-wrap gap-2">
+          {(["all", "active", "done", "failed"] as const).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`!rounded-full !px-4 !py-1.5 !text-xs ${filter === key ? "btn-primary !py-1.5" : "btn-ghost !py-1.5"}`}
+              onClick={() => setFilter(key)}
+            >
+              {key === "all" ? "All" : key === "active" ? "In progress" : key === "done" ? "Succeeded" : "Failed"}
+            </button>
+          ))}
+        </div>
+        <input
+          className="field !w-auto grow placeholder:text-secondary/60 sm:ml-auto"
+          style={{ maxWidth: 260 }}
+          placeholder="Search file or link..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
+
+      <div className="glass mt-4 overflow-hidden">
         {jobs === null && !error && <p className="px-5 py-8 text-center text-sm text-secondary">Loading…</p>}
         {jobs !== null && !hasJobs && (
           <div className="px-5 py-10 text-center">
@@ -109,9 +141,14 @@ export default function HistoryPage() {
             <p className="mt-1 text-xs text-secondary/70">Paste a video link on the home page and your jobs will appear here.</p>
           </div>
         )}
-        {hasJobs && (
+        {jobs !== null && jobs.length > 0 && filtered.length === 0 && (
+          <div className="px-5 py-10 text-center">
+            <p className="text-sm text-secondary">No jobs match this filter.</p>
+          </div>
+        )}
+        {hasJobs && filtered.length > 0 && (
           <ul className="divide-y divide-white/5">
-            {jobs!.map((job) => (
+            {filtered.map((job) => (
               <li key={job.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 grow">
                   <p className="truncate text-sm font-semibold">{job.filename || job.resource}</p>

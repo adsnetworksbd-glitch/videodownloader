@@ -32,7 +32,26 @@ type AdminStats = {
   providers_total: number;
   providers_up: number;
   providers_down: number;
+  providers_down_list: string[];
+  daily: { date: string; count: number }[];
   trending: { domain: string; downloads: number }[];
+};
+
+type AdminMessage = {
+  id: number;
+  kind: string;
+  name: string;
+  phone: string | null;
+  txid: string | null;
+  body: string;
+  is_read: boolean;
+  created_at: string;
+};
+
+type Ban = {
+  ip: string;
+  reason: string | null;
+  created_at: string;
 };
 
 type License = {
@@ -111,6 +130,10 @@ export default function AdminPage() {
   const [lastKey, setLastKey] = useState("");
   const [settings, setSettings] = useState<Record<string, string>>(SETTING_DEFAULTS);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
+  const [messages, setMessages] = useState<AdminMessage[] | null>(null);
+  const [messageKind, setMessageKind] = useState<"all" | "message" | "pro_order">("all");
+  const [bans, setBans] = useState<Ban[]>([]);
+  const [banForm, setBanForm] = useState<{ ip: string; reason: string }>({ ip: "", reason: "" });
 
   const authed = Boolean(token) && Boolean(providers);
 
@@ -164,6 +187,55 @@ export default function AdminPage() {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  const loadMessages = useCallback(async () => {
+    if (!authed) return;
+    try {
+      const query = messageKind === "all" ? "" : `?kind=${messageKind}`;
+      setMessages(await apiFetch<AdminMessage[]>(`/api/admin/messages${query}`, { admin: true }));
+    } catch {}
+  }, [authed, messageKind]);
+
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  const loadBans = useCallback(async () => {
+    if (!authed) return;
+    try {
+      setBans(await apiFetch<Ban[]>("/api/admin/bans", { admin: true }));
+    } catch {}
+  }, [authed]);
+
+  useEffect(() => {
+    loadBans();
+  }, [loadBans]);
+
+  function exportData() {
+    apiFetch<Record<string, unknown>>("/api/admin/export", { admin: true })
+      .then((data) => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "videodownloader-export.json";
+        link.click();
+        URL.revokeObjectURL(link.href);
+      })
+      .catch((err) => setError((err as Error).message));
+  }
+
+  async function banSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      await apiFetch("/api/admin/bans", { method: "POST", body: banForm, admin: true });
+      setBanForm({ ip: "", reason: "" });
+      setMessage("IP banned.");
+      await loadBans();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   async function saveSettings(event: React.FormEvent) {
     event.preventDefault();
@@ -390,9 +462,30 @@ export default function AdminPage() {
             {stats.providers_down > 0 && (
               <span className="pill-flow border-red-500/40 text-red-300">
                 providers down: <strong className="text-white">{stats.providers_down}</strong>
+                {stats.providers_down_list?.length ? <span className="text-secondary/70"> ({stats.providers_down_list.join(", ")})</span> : null}
               </span>
             )}
           </div>
+          {(stats.daily?.length || 0) > 0 && (
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70">Downloads last 7 days</p>
+              <div className="mt-2 flex h-24 items-end gap-2">
+                {stats.daily.map((day) => {
+                  const max = Math.max(...stats.daily.map((d) => d.count), 1);
+                  return (
+                    <div key={day.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                      <div
+                        className="w-full rounded-t-md bg-gradient-to-t from-brand/60 to-cyan-glow/80"
+                        style={{ height: `${Math.max(4, Math.round((day.count / max) * 88))}px` }}
+                        title={`${day.date}: ${day.count}`}
+                      />
+                      <span className="text-[10px] text-secondary/60">{day.date.slice(5)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {stats.trending.length > 0 && (
             <div className="mt-4">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70">Trending sources</p>
@@ -414,9 +507,14 @@ export default function AdminPage() {
           <h2 className="text-lg font-bold">
             Pro <span className="gradient-text">licenses</span>
           </h2>
-          <Link href="/pro" className="text-xs font-semibold text-brand hover:text-cyan-glow">
-            View the Pro page →
-          </Link>
+          <div className="flex items-center gap-3">
+            <button type="button" className="btn-ghost !px-3 !py-1 text-xs" onClick={exportData}>
+              ⬇ Export data (JSON)
+            </button>
+            <Link href="/pro" className="text-xs font-semibold text-brand hover:text-cyan-glow">
+              View the Pro page →
+            </Link>
+          </div>
         </div>
         <form
           className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
@@ -664,6 +762,117 @@ export default function AdminPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold">
+            Orders &amp; <span className="gradient-text">messages</span>
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "message", "pro_order"] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                className={`${messageKind === kind ? "btn-primary" : "btn-ghost"} !px-3 !py-1 !text-xs`}
+                onClick={() => setMessageKind(kind)}
+              >
+                {kind === "all" ? "All" : kind === "message" ? "Messages" : "Pro orders"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ul className="mt-4 space-y-3">
+          {(messages || []).map((message) => (
+            <li key={message.id} className={`rounded-xl border p-3 ${message.is_read ? "border-white/10 bg-white/[0.02]" : "border-brand/40 bg-brand/10"}`}>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className={`pill-flow ${message.kind === "pro_order" ? "border-amber-500/40 text-amber-300" : "border-white/15 text-secondary"}`}>
+                  {message.kind === "pro_order" ? "Pro order" : "Message"}
+                </span>
+                <strong className="text-sm text-white">{message.name}</strong>
+                {message.phone && <span className="text-secondary">{message.phone}</span>}
+                {message.txid && <code className="text-cyan-glow">TXID {message.txid}</code>}
+                <span className="ml-auto text-secondary/60">{new Date(message.created_at).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}</span>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-secondary">{message.body}</p>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px]"
+                  onClick={async () => {
+                    try {
+                      await apiFetch(`/api/admin/messages/${message.id}`, { method: "PATCH", body: { is_read: !message.is_read }, admin: true });
+                      await loadMessages();
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  {message.is_read ? "Mark unread" : "Mark read"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px] !border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                  onClick={async () => {
+                    if (!window.confirm("Delete this message?")) return;
+                    try {
+                      await apiFetch(`/api/admin/messages/${message.id}`, { method: "DELETE", admin: true });
+                      await loadMessages();
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+          {messages !== null && messages.length === 0 && (
+            <li className="px-2 py-6 text-center text-xs text-secondary">No messages in this tab yet.</li>
+          )}
+        </ul>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <h2 className="text-lg font-bold">
+          Banned <span className="gradient-text">IPs</span>
+        </h2>
+        <p className="mt-1 text-xs text-secondary">Banned IPs are refused for downloads, playlists, thumbnails and contact.</p>
+        <form className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={banSubmit}>
+          <div className="w-full sm:w-44">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-secondary/70" htmlFor="ban-ip">IP</label>
+            <input id="ban-ip" required className="field font-mono" placeholder="203.0.113.5" value={banForm.ip} onChange={(e) => setBanForm({ ...banForm, ip: e.target.value })} />
+          </div>
+          <div className="grow">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-secondary/70" htmlFor="ban-reason">Reason (optional)</label>
+            <input id="ban-reason" className="field" placeholder="rate abuse" value={banForm.reason} onChange={(e) => setBanForm({ ...banForm, reason: e.target.value })} maxLength={255} />
+          </div>
+          <button type="submit" className="btn-primary">Ban</button>
+        </form>
+        <ul className="mt-4">
+          {bans.map((ban) => (
+            <li key={ban.ip} className="flex flex-wrap items-center gap-3 border-t border-white/5 py-2 text-sm">
+              <code className="font-mono text-xs text-white">{ban.ip}</code>
+              <span className="text-xs text-secondary">{ban.reason || "no reason"}</span>
+              <button
+                type="button"
+                className="btn-ghost ml-auto !px-2.5 !py-1 text-[11px]"
+                onClick={async () => {
+                  try {
+                    await apiFetch(`/api/admin/bans/${ban.ip}`, { method: "DELETE", admin: true });
+                    await loadBans();
+                  } catch (err) {
+                    setError((err as Error).message);
+                  }
+                }}
+              >
+                Unban
+              </button>
+            </li>
+          ))}
+          {bans.length === 0 && <li className="py-4 text-center text-xs text-secondary">No IPs banned.</li>}
+        </ul>
       </div>
 
       {message && (

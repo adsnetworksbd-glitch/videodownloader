@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     free_daily_limit: int = 100
     pro_daily_limit: int = 1000
     free_playlist_items: int = 10
+    telegram_bot_token: str = ""
 
 
 @lru_cache

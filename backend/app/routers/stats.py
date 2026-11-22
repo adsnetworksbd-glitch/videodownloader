@@ -1,3 +1,4 @@
+from datetime import timedelta
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..crud import get_overrides, list_jobs, list_providers
 from ..database import get_db
 from ..deps import require_admin
-from ..models import DownloadJob
+from ..models import DownloadJob, utcnow
 from .catalog import total_sites
 
 public_router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -74,6 +75,18 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
     }
     providers = await list_providers(db, include_inactive=True)
 
+    week_ago = utcnow() - timedelta(days=6)
+    daily_result = await db.execute(
+        select(func.date(DownloadJob.created_at), func.count(DownloadJob.id))
+        .where(DownloadJob.created_at >= week_ago)
+        .group_by(func.date(DownloadJob.created_at))
+    )
+    per_day = {str(day): int(count) for day, count in daily_result.all()}
+    daily = []
+    for offset in range(6, -1, -1):
+        day = (utcnow() - timedelta(days=offset)).strftime("%Y-%m-%d")
+        daily.append({"date": day, "count": per_day.get(day, 0)})
+
     return {
         "jobs_total": int(total_result.scalar() or 0),
         "statuses": statuses,
@@ -81,6 +94,8 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
         "providers_total": len(providers),
         "providers_up": sum(1 for p in providers if p.last_status == "up"),
         "providers_down": sum(1 for p in providers if p.last_status == "down"),
+        "providers_down_list": [p.name for p in providers if p.last_status == "down"],
+        "daily": daily,
         "trending": _trending(jobs),
     }
 

@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import effective_int, valid_license
+from ..crud import effective_int, is_banned, valid_license
 from ..database import get_db
+from ..deps import client_ip
 from ..providers import VideoResolutionError
 from ..providers.ytdlp import extract_info_sync
 from ..security import UnsafeUrlError, assert_public_url
@@ -37,6 +38,9 @@ async def playlist(
     limit: int = Query(default=100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ):
+    ip = client_ip(request)
+    if await is_banned(db, ip):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your access is restricted.")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url must start with http(s)://")
     try:
@@ -92,7 +96,10 @@ async def playlist(
 
 
 @router.get("/thumbnail")
-async def thumbnail(url: str = Query(min_length=8, max_length=1024), download: bool = False):
+async def thumbnail(request: Request, url: str = Query(min_length=8, max_length=1024), download: bool = False, db: AsyncSession = Depends(get_db)):
+    ip = client_ip(request)
+    if await is_banned(db, ip):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your access is restricted.")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url must start with http(s)://")
     try:
