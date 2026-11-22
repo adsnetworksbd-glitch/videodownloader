@@ -126,3 +126,15 @@ class ContactMessage(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+
+
+class DownloadEvent(Base):
+    __tablename__ = "download_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    quality: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    ext: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    content_length: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)

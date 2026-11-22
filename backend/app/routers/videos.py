@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import is_banned
+from ..crud import is_banned, record_download_event
 from ..database import get_db
 from ..deps import client_ip
 from ..providers import VideoResolutionError
@@ -132,6 +132,14 @@ async def direct_link(
     resolved_quality = "audio"
     if (quality or "").strip().lower() != "audio":
         resolved_quality = f"{fmt['height']}p" if fmt.get("height") else (quality or "best")
+    await record_download_event(
+        db,
+        url=url,
+        title=entry.get("title") or None,
+        quality=resolved_quality,
+        ext=ext,
+        content_length=fmt.get("filesize") or fmt.get("filesize_approx"),
+    )
     return {
         "direct": True,
         "url": fmt["url"],

@@ -36,6 +36,7 @@ type AdminStats = {
   providers_down_list: string[];
   daily: { date: string; count: number }[];
   trending: { domain: string; downloads: number }[];
+  direct_downloads?: number;
 };
 
 type AdminMessage = {
@@ -612,6 +613,10 @@ export default function AdminPage() {
             <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
               <p className="text-2xl font-extrabold text-cyan-glow">{stats.active_downloads}</p>
               <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">In progress</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-2xl font-extrabold text-cyan-glow">{stats.direct_downloads ?? 0}</p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">Direct saves</p>
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-secondary">

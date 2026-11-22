@@ -10,7 +10,7 @@ from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import effective_int, is_banned, list_jobs, valid_license
+from ..crud import effective_int, is_banned, list_download_events, list_jobs, valid_license
 from ..database import get_db
 from ..deps import client_ip
 from ..models import DownloadJob, utcnow
@@ -86,6 +86,12 @@ async def create_download(data: DownloadCreate, request: Request, db: AsyncSessi
 @router.get("", response_model=list[DownloadJobOut])
 async def history(limit: int = 50, db: AsyncSession = Depends(get_db)):
     return await list_jobs(db, limit=min(max(limit, 1), 200))
+
+
+@router.get("/events")
+async def direct_events(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    """History for direct-CDN downloads (no server job exists for those)."""
+    return await list_download_events(db, limit=min(max(limit, 1), 200))
 
 
 @router.get("/{job_id}", response_model=DownloadJobOut)

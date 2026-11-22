@@ -267,6 +267,23 @@ async def test_info_includes_subtitles(client, monkeypatch):
     ]
 
 
+async def test_direct_link_records_history_event(client, monkeypatch):
+    empty = await client.get("/api/downloads/events")
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    _patch_extract(monkeypatch, _formats_info())
+    response = await client.get("/api/info/direct?url=https://www.youtube.com/watch?v=abc&quality=720p")
+    assert response.status_code == 200
+
+    events = (await client.get("/api/downloads/events")).json()
+    assert len(events) == 1
+    assert events[0]["url"].endswith("watch?v=abc")
+    assert events[0]["title"] == "Direct Test Video"
+    assert events[0]["quality"] == "720p"
+    assert events[0]["ext"] == "mp4"
+
+
 async def test_direct_link_best_quality(client, monkeypatch):
     _patch_extract(monkeypatch, _formats_info())
 

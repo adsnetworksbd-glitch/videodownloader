@@ -17,6 +17,31 @@ type Job = {
   created_at: string;
 };
 
+type DirectEvent = {
+  id: number;
+  url: string;
+  title: string | null;
+  quality: string | null;
+  ext: string | null;
+  content_length: number | null;
+  created_at: string;
+};
+
+type HistoryRow = {
+  key: string;
+  kind: "job" | "direct";
+  title: string;
+  resource: string;
+  status: string;
+  quality: string | null;
+  ext: string | null;
+  audio: boolean;
+  size: number | null;
+  error: string | null;
+  jobId: string | null;
+  created_at: string;
+};
+
 function formatBytes(n?: number | null) {
   if (!n && n !== 0) return "—";
   const units = ["B", "KB", "MB", "GB"];
@@ -44,25 +69,63 @@ const STATUS_STYLE: Record<string, string> = {
   pending: "border-white/15 text-secondary",
 };
 
+const ACTIVE = new Set(["queued", "downloading", "streaming", "pending"]);
+
 export default function HistoryPage() {
   const [jobs, setJobs] = useState<Job[] | null>(null);
+  const [rows, setRows] = useState<HistoryRow[]>([]);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "active" | "done" | "failed">("all");
   const [query, setQuery] = useState("");
 
-  const filtered = (jobs || []).filter((job) => {
-    if (filter === "done" && !(job.status === "ready" || job.status === "completed")) return false;
-    if (filter === "failed" && job.status !== "failed") return false;
-    if (filter === "active" && !("queued downloading streaming pending".includes(job.status))) return false;
+  const filtered = rows.filter((row) => {
+    if (filter === "done" && row.status !== "ready" && row.status !== "completed") return false;
+    if (filter === "failed" && row.status !== "failed") return false;
+    if (filter === "active" && !ACTIVE.has(row.status)) return false;
     const q = query.trim().toLowerCase();
-    if (q && !(job.filename || "").toLowerCase().includes(q) && !job.resource.toLowerCase().includes(q)) return false;
+    if (q && !row.title.toLowerCase().includes(q) && !row.resource.toLowerCase().includes(q)) return false;
     return true;
   });
 
   const load = useCallback(async () => {
     try {
-      const list = await apiFetch<Job[]>("/api/downloads?limit=100");
-      setJobs(list);
+      const [jobList, eventList] = await Promise.all([
+        apiFetch<Job[]>("/api/downloads?limit=100"),
+        apiFetch<DirectEvent[]>("/api/downloads/events?limit=100").catch(() => [] as DirectEvent[]),
+      ]);
+      const jobRows: HistoryRow[] = (jobList || []).map((job) => ({
+        key: `job-${job.id}`,
+        kind: "job",
+        title: job.filename || job.resource,
+        resource: job.resource,
+        status: job.status,
+        quality: job.quality,
+        ext: null,
+        audio: job.audio_only,
+        size: job.content_length,
+        error: job.error,
+        jobId: job.id,
+        created_at: job.created_at,
+      }));
+      const directRows: HistoryRow[] = (eventList || []).map((event) => ({
+        key: `direct-${event.id}`,
+        kind: "direct",
+        title: event.title || event.url,
+        resource: event.url,
+        status: "completed",
+        quality: event.quality,
+        ext: event.ext,
+        audio: event.quality === "audio",
+        size: event.content_length,
+        error: null,
+        jobId: null,
+        created_at: event.created_at,
+      }));
+      const merged = [...jobRows, ...directRows].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setJobs(jobList || []);
+      setRows(merged);
       setError("");
     } catch (err) {
       setError((err as Error).message);
@@ -88,7 +151,7 @@ export default function HistoryPage() {
     }
   }
 
-  const hasJobs = (jobs && jobs.length > 0) || false;
+  const hasRows = rows.length > 0;
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -97,7 +160,7 @@ export default function HistoryPage() {
             Download <span className="gradient-text">History</span>
           </h1>
           <p className="mt-2 text-sm text-secondary">
-            Recent jobs on this server. Files exist on the server until the next cleanup — re-save any finished one.
+            Direct-link saves and server files in one list. Files exist on the server until the next cleanup — re-save any finished one.
           </p>
         </div>
         <button type="button" className="btn-ghost" onClick={load}>
@@ -135,36 +198,50 @@ export default function HistoryPage() {
 
       <div className="glass mt-4 overflow-hidden">
         {jobs === null && !error && <p className="px-5 py-8 text-center text-sm text-secondary">Loading…</p>}
-        {jobs !== null && !hasJobs && (
+        {jobs !== null && !hasRows && (
           <div className="px-5 py-10 text-center">
             <p className="text-sm text-secondary">No downloads yet.</p>
-            <p className="mt-1 text-xs text-secondary/70">Paste a video link on the home page and your jobs will appear here.</p>
+            <p className="mt-1 text-xs text-secondary/70">Paste a video link on the home page and your downloads will appear here.</p>
           </div>
         )}
-        {jobs !== null && jobs.length > 0 && filtered.length === 0 && (
+        {jobs !== null && hasRows && filtered.length === 0 && (
           <div className="px-5 py-10 text-center">
-            <p className="text-sm text-secondary">No jobs match this filter.</p>
+            <p className="text-sm text-secondary">No downloads match this filter.</p>
           </div>
         )}
-        {hasJobs && filtered.length > 0 && (
+        {hasRows && filtered.length > 0 && (
           <ul className="divide-y divide-white/5">
-            {filtered.map((job) => (
-              <li key={job.id} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
+            {filtered.map((row) => (
+              <li key={row.key} className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 grow">
-                  <p className="truncate text-sm font-semibold">{job.filename || job.resource}</p>
+                  <p className="truncate text-sm font-semibold">{row.title}</p>
                   <p className="mt-0.5 truncate text-xs text-secondary">
-                    {formatDate(job.created_at)}
-                    {job.quality ? ` · ${job.quality}` : ""}
-                    {job.audio_only ? " · audio" : ""} · {formatBytes(job.content_length)}
+                    {formatDate(row.created_at)}
+                    {row.quality ? ` · ${row.quality}` : ""}
+                    {row.audio ? " · audio" : ""}
+                    {row.ext ? ` · .${row.ext}` : ""} · {formatBytes(row.size)}
                   </p>
-                  {job.error && <p className="mt-1 line-clamp-2 text-xs text-red-300/80">{job.error}</p>}
+                  {row.error && <p className="mt-1 line-clamp-2 text-xs text-red-300/80">{row.error}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <span className={`pill-flow ${STATUS_STYLE[job.status] || "border-white/15 text-secondary"}`}>{job.status}</span>
-                  {(job.status === "ready" || job.status === "completed") && (
-                    <a className="btn-ghost !px-3 !py-1.5 text-xs" href={`/api/downloads/${job.id}/file`} onClick={() => saveAgain(job)}>
-                      Save
-                    </a>
+                  {row.kind === "direct" ? (
+                    <span className="pill-flow border-cyan-glow/40 text-cyan-glow">direct link</span>
+                  ) : (
+                    <>
+                      <span className={`pill-flow ${STATUS_STYLE[row.status] || "border-white/15 text-secondary"}`}>{row.status}</span>
+                      {(row.status === "ready" || row.status === "completed") && row.jobId && (
+                        <a
+                          className="btn-ghost !px-3 !py-1.5 text-xs"
+                          href={`/api/downloads/${row.jobId}/file`}
+                          onClick={() => {
+                            const job = (jobs || []).find((item) => item.id === row.jobId);
+                            if (job) saveAgain(job);
+                          }}
+                        >
+                          Save
+                        </a>
+                      )}
+                    </>
                   )}
                 </div>
               </li>

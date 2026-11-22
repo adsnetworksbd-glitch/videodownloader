@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..crud import get_overrides, list_jobs, list_providers
+from ..crud import get_overrides, list_download_events, list_jobs, list_providers
 from ..database import get_db
 from ..deps import require_admin
-from ..models import DownloadJob, utcnow
+from ..models import DownloadEvent, DownloadJob, utcnow
 from .catalog import total_sites
 
 public_router = APIRouter(prefix="/api/stats", tags=["stats"])
@@ -43,6 +43,10 @@ async def public_stats(db: AsyncSession = Depends(get_db)):
         if job.status not in ("completed", "ready"):
             continue
         host = _host_of(job.resource)
+        if host:
+            trending[host] = trending.get(host, 0) + 1
+    for event in await list_download_events(db, limit=1000):
+        host = _host_of(event.url)
         if host:
             trending[host] = trending.get(host, 0) + 1
     top = sorted(trending.items(), key=lambda kv: -kv[1])[:5]
@@ -96,16 +100,21 @@ async def admin_stats(db: AsyncSession = Depends(get_db)):
         "providers_down": sum(1 for p in providers if p.last_status == "down"),
         "providers_down_list": [p.name for p in providers if p.last_status == "down"],
         "daily": daily,
-        "trending": _trending(jobs),
+        "trending": _trending(jobs, await list_download_events(db, limit=500)),
+        "direct_downloads": len(await list_download_events(db, limit=500)),
     }
 
 
-def _trending(jobs):
+def _trending(jobs, events):
     trending: dict[str, int] = {}
     for job in jobs:
         if job.status not in ("completed", "ready"):
             continue
         host = _host_of(job.resource)
+        if host:
+            trending[host] = trending.get(host, 0) + 1
+    for event in events:
+        host = _host_of(event.url)
         if host:
             trending[host] = trending.get(host, 0) + 1
     top = sorted(trending.items(), key=lambda kv: -kv[1])[:10]

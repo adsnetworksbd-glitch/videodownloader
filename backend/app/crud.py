@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import ApiKey, BannedIP, ContactMessage, DownloadJob, LicenseKey, ProOrder, ProPackage, Provider, SiteSetting, utcnow
+from .models import ApiKey, BannedIP, ContactMessage, DownloadEvent, DownloadJob, LicenseKey, ProOrder, ProPackage, Provider, SiteSetting, utcnow
 from .schemas import ContactMessageIn, ProviderCreate, ProviderUpdate
 
 
@@ -283,3 +283,22 @@ async def delete_order(db: AsyncSession, order_id: int) -> bool:
     await db.delete(order)
     await db.commit()
     return True
+
+
+async def record_download_event(
+    db: AsyncSession, url: str, title: str | None, quality: str | None, ext: str | None, content_length: int | None
+) -> DownloadEvent:
+    """Direct-CDN downloads never become a server job, so log them separately
+    so download history and stats still show them."""
+    row = DownloadEvent(url=url, title=title, quality=quality, ext=ext, content_length=content_length)
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def list_download_events(db: AsyncSession, limit: int = 100) -> list[DownloadEvent]:
+    result = await db.execute(
+        select(DownloadEvent).order_by(DownloadEvent.created_at.desc(), DownloadEvent.id.desc()).limit(limit)
+    )
+    return list(result.scalars().all())
