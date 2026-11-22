@@ -16,6 +16,16 @@ BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 _ytdlp_sema: asyncio.Semaphore | None = None
 _inflight: set[str] = set()
+_job_cookies: dict[str, str] = {}
+
+
+def set_job_cookies(job_id: str, cookies: str) -> None:
+    if cookies:
+        _job_cookies[job_id] = cookies
+
+
+def pop_job_cookies(job_id: str) -> str | None:
+    return _job_cookies.pop(job_id, None)
 
 
 def _semaphore() -> asyncio.Semaphore:
@@ -55,7 +65,7 @@ def _format_for(quality: str | None, has_ffmpeg: bool | None = None) -> str:
     )
 
 
-def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir: str, audio_only: bool, progress_cb, quality=None) -> dict:
+def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir: str, audio_only: bool, progress_cb, quality=None, cookies=None) -> dict:
     """Blocking yt-dlp download. Returns {"filepath", "filename"}. progress_cb(done, total) is thread-safe."""
     import yt_dlp
 
@@ -87,9 +97,10 @@ def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir
         options["postprocessors"] = [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
         ]
-    if provider.cookies:
+    cookie_source = cookies or provider.cookies
+    if cookie_source:
         cookie_file = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
-        cookie_file.write(provider.cookies)
+        cookie_file.write(cookie_source)
         cookie_file.close()
         options["cookiefile"] = cookie_file.name
 
@@ -99,7 +110,7 @@ def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir
             filepath = info.get("filepath") or ydl.prepare_filename(info)
             title = info.get("title") or "video"
     finally:
-        if provider.cookies and options.get("cookiefile"):
+        if cookie_source and options.get("cookiefile"):
             try:
                 os.unlink(options["cookiefile"])
             except OSError:
@@ -179,6 +190,7 @@ async def _download_with_fallback(job_id: str) -> None:
             return
         audio_only = job.audio_only
         quality = job.quality
+        cookies = pop_job_cookies(job_id)
         providers = [p for p in await list_providers(session, include_inactive=False) if p.adapter == "ytdlp"]
         if not providers:
             job.status = "failed"
@@ -208,6 +220,7 @@ async def _download_with_fallback(job_id: str) -> None:
                 audio_only,
                 _safe_progress(job_id, loop),
                 quality,
+                cookies,
             )
         except Exception as exc:
             message = f"{type(exc).__name__}: {exc}"[:500]

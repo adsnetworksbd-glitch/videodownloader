@@ -2,17 +2,20 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { setLang, tt, useLang, type Lang } from "../lib/lang";
 import { DownloadIcon } from "./icons";
 
 const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/sites", label: "Supported Sites" },
-  { href: "/#how-it-works", label: "How It Works" },
-  { href: "/#faq", label: "FAQ" },
+  { href: "/", key: "nav_home" },
+  { href: "/sites", key: "nav_sites" },
+  { href: "/#how-it-works", key: "nav_how" },
+  { href: "/#faq", key: "nav_faq" },
+  { href: "/history", key: "nav_history" },
 ];
 
 export default function Header() {
   const [open, setOpen] = useState(false);
+  const lang = useLang();
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/5 bg-ink/70 backdrop-blur-xl">
@@ -32,11 +35,11 @@ export default function Header() {
         <nav className="hidden items-center gap-1 md:flex">
           {NAV.map((item) => (
             <Link
-              key={item.label}
+              key={item.key}
               href={item.href}
               className="rounded-lg px-4 py-2 text-sm font-medium text-secondary transition-colors hover:bg-white/5 hover:text-white"
             >
-              {item.label}
+              {tt(lang, item.key)}
             </Link>
           ))}
         </nav>
@@ -45,7 +48,8 @@ export default function Header() {
           <select
             aria-label="Language"
             className="hidden rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-secondary outline-none sm:block"
-            defaultValue="en"
+            value={lang}
+            onChange={(e) => setLang(e.target.value as Lang)}
           >
             <option value="en">EN</option>
             <option value="bn">BN</option>
@@ -68,12 +72,12 @@ export default function Header() {
         <nav className="border-t border-white/5 bg-ink/95 px-4 py-3 md:hidden">
           {NAV.map((item) => (
             <Link
-              key={item.label}
+              key={item.key}
               href={item.href}
               className="block rounded-lg px-3 py-3 text-sm font-medium text-secondary hover:bg-white/5 hover:text-white"
               onClick={() => setOpen(false)}
             >
-              {item.label}
+              {tt(lang, item.key)}
             </Link>
           ))}
         </nav>

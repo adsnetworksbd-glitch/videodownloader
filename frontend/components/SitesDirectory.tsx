@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type Site = { name: string; domain: string; category: string; status: string; formats: string[] };
@@ -94,6 +95,14 @@ export default function SitesDirectory() {
               {site.formats.map((f) => (
                 <span key={f} className="pill-flow text-secondary">{f}</span>
               ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Link
+                className="btn-ghost !px-3 !py-1.5 text-xs"
+                href={`/?url=${encodeURIComponent(`https://${site.domain}/`)}`}
+              >
+                Try it →
+              </Link>
             </div>
           </div>
         ))}

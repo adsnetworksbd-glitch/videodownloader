@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     ytdlp_format: str = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[ext=mp4][height<=1080]/best"
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
+    free_daily_limit: int = 100
 
 
 @lru_cache

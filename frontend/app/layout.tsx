@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import BanglaBanner from "../components/BanglaBanner";
+import DownloadsHud from "../components/DownloadsHud";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
@@ -33,6 +35,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Header />
         <main className="grow">{children}</main>
         <Footer />
+        <BanglaBanner />
+        <DownloadsHud />
       </body>
     </html>
   );

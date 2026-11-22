@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LiveStats from "./LiveStats";
 import { DownloadIcon } from "./icons";
 
 const PAGES = [
@@ -13,6 +14,7 @@ const NAV = [
   { href: "/sites", label: "Supported Sites" },
   { href: "/#how-it-works", label: "How It Works" },
   { href: "/#faq", label: "FAQ" },
+  { href: "/history", label: "History" },
 ];
 
 export default function Footer() {
@@ -48,8 +50,11 @@ export default function Footer() {
           ))}
         </nav>
       </div>
-      <div className="border-t border-white/5 py-5 text-center text-xs text-secondary/70">
-        Download Your Favorite Videos — Anytime, Anywhere.
+      <div className="border-t border-white/5 py-5">
+        <LiveStats />
+        <p className="text-center text-xs text-secondary/70">
+          Download Your Favorite Videos — Anytime, Anywhere.
+        </p>
       </div>
     </footer>
   );

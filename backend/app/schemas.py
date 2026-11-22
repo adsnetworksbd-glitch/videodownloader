@@ -82,6 +82,7 @@ class DownloadCreate(BaseModel):
     resource: str = Field(min_length=1, max_length=1024)
     audio_only: bool = False
     quality: str | None = Field(default=None, max_length=10)
+    cookies: str | None = Field(default=None, max_length=200000)
 
 
 class DownloadJobOut(BaseModel):

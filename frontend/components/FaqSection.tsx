@@ -40,6 +40,12 @@ const FAQS = [
 
 export default function FaqSection() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const [query, setQuery] = useState("");
+
+  const needle = query.trim().toLowerCase();
+  const filtered = needle
+    ? FAQS.filter((item) => item.q.toLowerCase().includes(needle) || item.a.toLowerCase().includes(needle))
+    : FAQS;
 
   return (
     <section id="faq" className="section-pad scroll-mt-24 py-16">
@@ -49,8 +55,20 @@ export default function FaqSection() {
           Everything you need to know about downloading videos with VideoDownloader.
         </p>
       </div>
-      <div className="mx-auto max-w-3xl space-y-3">
-        {FAQS.map((item, index) => {
+      <div className="mx-auto max-w-3xl">
+        <input
+          className="field"
+          placeholder="Search questions…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search FAQ"
+        />
+      </div>
+      <div className="mx-auto mt-3 max-w-3xl space-y-3">
+        {filtered.length === 0 && (
+          <p className="py-6 text-center text-sm text-secondary">No questions match “{query}”.</p>
+        )}
+        {filtered.map((item, index) => {
           const open = openIndex === index;
           return (
             <div key={item.q} className={`glass overflow-hidden transition-colors ${open ? "border-brand/40" : ""}`}>

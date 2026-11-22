@@ -25,6 +25,16 @@ type Provider = {
   last_status: string | null;
 };
 
+type AdminStats = {
+  jobs_total: number;
+  statuses: Record<string, number>;
+  active_downloads: number;
+  providers_total: number;
+  providers_up: number;
+  providers_down: number;
+  trending: { domain: string; downloads: number }[];
+};
+
 type FormState = {
   name: string;
   adapter: string;
@@ -55,8 +65,26 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stats, setStats] = useState<AdminStats | null>(null);
 
   const authed = Boolean(token) && Boolean(providers);
+
+  useEffect(() => {
+    if (!authed) return;
+    let alive = true;
+    const loadStats = async () => {
+      try {
+        const data = await apiFetch<AdminStats>("/api/admin/stats", { admin: true });
+        if (alive) setStats(data);
+      } catch {}
+    };
+    loadStats();
+    const timer = setInterval(loadStats, 10000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [authed]);
 
   const load = useCallback(async (activeToken?: string) => {
     const saved = activeToken ?? getAdminToken();
@@ -208,6 +236,60 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {stats && (
+        <div className="glass mt-6 p-4 sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold">
+              Live <span className="gradient-text">stats</span>
+            </h2>
+            <span className="text-[11px] text-secondary/70">auto-refreshes every 10s</span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-2xl font-extrabold text-white">{stats.jobs_total}</p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">Total jobs</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-2xl font-extrabold text-emerald-300">
+                {(stats.statuses.ready || 0) + (stats.statuses.completed || 0)}
+              </p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">Succeeded</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-2xl font-extrabold text-red-300">{stats.statuses.failed || 0}</p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">Failed</p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+              <p className="text-2xl font-extrabold text-cyan-glow">{stats.active_downloads}</p>
+              <p className="mt-0.5 text-[11px] uppercase tracking-widest text-secondary/70">In progress</p>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs text-secondary">
+            <span className="pill-flow border-emerald-500/40 text-emerald-300">
+              providers up: <strong className="text-white">{stats.providers_up}</strong>/{stats.providers_total}
+            </span>
+            {stats.providers_down > 0 && (
+              <span className="pill-flow border-red-500/40 text-red-300">
+                providers down: <strong className="text-white">{stats.providers_down}</strong>
+              </span>
+            )}
+          </div>
+          {stats.trending.length > 0 && (
+            <div className="mt-4">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-secondary/70">Trending sources</p>
+              <ul className="mt-2 space-y-1 text-xs text-secondary">
+                {stats.trending.map((entry) => (
+                  <li key={entry.domain} className="flex items-center justify-between gap-4">
+                    <span className="truncate font-mono">{entry.domain}</span>
+                    <span className="text-secondary/70">{entry.downloads}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       {message && (
         <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300" role="status">

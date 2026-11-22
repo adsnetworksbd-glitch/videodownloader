@@ -23,7 +23,7 @@ async def _wait_for_status(client, job_id, statuses, timeout=5.0):
 async def test_video_job_downloads_to_ready_and_serves(client, tmp_path, monkeypatch):
     out_dir = tmp_path / "dl"
 
-    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None):
+    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
         os.makedirs(jobs_dir, exist_ok=True)
         path = os.path.join(jobs_dir, f"{job_id}.mp4")
         with open(path, "wb") as fh:
@@ -57,7 +57,7 @@ async def test_video_job_downloads_to_ready_and_serves(client, tmp_path, monkeyp
 
 
 async def test_video_job_failure_marks_failed(client, monkeypatch):
-    def failing_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None):
+    def failing_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
         raise RuntimeError("upstream exploded")
 
     monkeypatch.setattr(vs, "ytdlp_download_sync", failing_download)
@@ -80,7 +80,7 @@ async def test_video_job_failure_marks_failed(client, monkeypatch):
 async def test_audio_only_flag_persists(client, monkeypatch):
     audio_jobs = {}
 
-    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None):
+    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
         audio_jobs[job_id] = audio_only
         os.makedirs(jobs_dir, exist_ok=True)
         path = os.path.join(jobs_dir, f"{job_id}.mp3")
@@ -100,7 +100,7 @@ async def test_audio_only_flag_persists(client, monkeypatch):
 async def test_quality_is_persisted_and_passed_to_ytdlp(client, monkeypatch):
     seen = {}
 
-    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None):
+    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
         seen[job_id] = (audio_only, quality)
         os.makedirs(jobs_dir, exist_ok=True)
         path = os.path.join(jobs_dir, f"{job_id}.mp4")
@@ -143,3 +143,47 @@ async def test_provider_cookies_are_masked(client):
 
     listed = (await client.get("/api/admin/providers", headers=AUTH)).json()
     assert any(p["has_cookies"] for p in listed)
+
+
+async def test_user_cookies_are_passed_and_not_persisted(client, monkeypatch):
+    seen = {}
+
+    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
+        seen[job_id] = cookies
+        os.makedirs(jobs_dir, exist_ok=True)
+        path = os.path.join(jobs_dir, f"{job_id}.mp4")
+        open(path, "wb").close()
+        return {"filepath": path, "filename": os.path.basename(path), "title": "Clip"}
+
+    monkeypatch.setattr(vs, "ytdlp_download_sync", fake_download)
+    await client.post("/api/admin/providers", headers=AUTH, json=make_ytdlp_provider())
+
+    cookies = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tsecret"
+    job = (
+        await client.post(
+            "/api/downloads",
+            json={"resource": "https://www.youtube.com/watch?v=cookie", "cookies": cookies},
+        )
+    ).json()
+    final = await _wait_for_status(client, job["id"], {"ready", "failed"})
+    assert final["status"] == "ready"
+    assert seen[job["id"]] == cookies
+    assert "cookies" not in final
+
+
+async def test_user_cookies_empty_is_ignored(client, monkeypatch):
+    seen = {}
+
+    def fake_download(job_id, resource, provider, jobs_dir, audio_only, progress_cb, quality=None, cookies=None):
+        seen[job_id] = cookies
+        os.makedirs(jobs_dir, exist_ok=True)
+        path = os.path.join(jobs_dir, f"{job_id}.mp4")
+        open(path, "wb").close()
+        return {"filepath": path, "filename": os.path.basename(path), "title": "Clip"}
+
+    monkeypatch.setattr(vs, "ytdlp_download_sync", fake_download)
+    await client.post("/api/admin/providers", headers=AUTH, json=make_ytdlp_provider())
+    job = (await client.post("/api/downloads", json={"resource": "https://youtu.be/nocookie", "cookies": ""})).json()
+    final = await _wait_for_status(client, job["id"], {"ready", "failed"})
+    assert final["status"] == "ready"
+    assert seen[job["id"]] in (None, "")
