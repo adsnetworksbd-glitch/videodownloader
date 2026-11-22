@@ -2,9 +2,12 @@ import asyncio
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
+from ..crud import valid_license
+from ..database import get_db
 from ..providers import VideoResolutionError
 from ..providers.ytdlp import extract_info_sync
 from ..security import UnsafeUrlError, assert_public_url
@@ -28,7 +31,12 @@ def _extract_playlist_sync(url: str, timeout: int) -> dict:
 
 
 @router.get("/playlist")
-async def playlist(url: str = Query(min_length=8, max_length=1024), limit: int = Query(default=100, ge=1, le=500)):
+async def playlist(
+    request: Request,
+    url: str = Query(min_length=8, max_length=1024),
+    limit: int = Query(default=100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="url must start with http(s)://")
     try:
@@ -54,8 +62,11 @@ async def playlist(url: str = Query(min_length=8, max_length=1024), limit: int =
     if not isinstance(raw_entries, list) or not raw_entries:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="not a playlist url")
 
+    license = await valid_license(db, request.headers.get("x-user-key") or "")
+    effective_limit = limit if license else min(limit, get_settings().free_playlist_items)
+
     items = []
-    for entry in raw_entries[:limit]:
+    for entry in raw_entries[:effective_limit]:
         if not entry:
             continue
         items.append(
@@ -69,10 +80,12 @@ async def playlist(url: str = Query(min_length=8, max_length=1024), limit: int =
     if not items:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="playlist contained no entries")
 
+    total_count = info.get("playlist_count") or len(raw_entries)
     return {
         "title": info.get("title"),
         "count": len(items),
-        "total_count": info.get("playlist_count") or len(raw_entries),
+        "total_count": total_count,
+        "pro_required": total_count > effective_limit and len(items) < total_count,
         "items": items,
     }
 

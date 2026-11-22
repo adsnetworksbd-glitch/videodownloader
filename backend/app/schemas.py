@@ -102,3 +102,25 @@ class DownloadJobOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
+
+
+class LicenseCreate(BaseModel):
+    plan: str = Field(default="pro", max_length=20)
+    days: int | None = Field(default=30, ge=1, le=3650)
+    note: str | None = Field(default=None, max_length=255)
+
+
+class LicenseUpdate(BaseModel):
+    is_active: bool | None = None
+
+
+class LicenseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    plan: str
+    note: str | None
+    is_active: bool
+    expires_at: datetime | None
+    redeemed_at: datetime | None
+    created_at: datetime

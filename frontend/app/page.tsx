@@ -1,3 +1,4 @@
+import AdSlot from "../components/AdSlot";
 import DownloadPanel from "../components/DownloadPanel";
 import FaqSection from "../components/FaqSection";
 import PhoneMockup from "../components/PhoneMockup";
@@ -44,6 +45,10 @@ export default function HomePage() {
 
       <div className="section-pad pb-6">
         <DownloadPanel />
+      </div>
+
+      <div className="section-pad pb-2">
+        <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_HOME} />
       </div>
 
       <PlatformsShowcase />

@@ -9,12 +9,19 @@ export function setAdminToken(token: string): void {
   window.localStorage.setItem(ADMIN_TOKEN_KEY, token || "");
 }
 
+export function getUserKey(): string {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem("gateway.pro_key") || "";
+}
+
 export async function apiFetch<T = unknown>(
   path: string,
   { method = "GET", body, admin = false }: { method?: string; body?: unknown; admin?: boolean } = {}
 ): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (admin) headers["X-Admin-Token"] = getAdminToken();
+  const userKey = getUserKey();
+  if (userKey) headers["X-User-Key"] = userKey;
   const response = await fetch(path, {
     method,
     headers,

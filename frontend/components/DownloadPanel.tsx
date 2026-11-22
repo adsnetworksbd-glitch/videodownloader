@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
@@ -20,7 +21,7 @@ type Info = {
   audio_only_available: boolean;
 };
 type PlaylistItem = { title: string | null; duration: number | null; thumbnail: string | null; url: string | null };
-type Playlist = { title: string | null; count: number; total_count: number; items: PlaylistItem[] };
+type Playlist = { title: string | null; count: number; total_count: number; pro_required?: boolean; items: PlaylistItem[] };
 
 type Phase = "idle" | "checking" | "ready" | "starting" | "downloading" | "saving" | "completed" | "error";
 
@@ -388,6 +389,11 @@ export default function DownloadPanel() {
                   </p>
                 </div>
                 <div className="flex gap-2">
+                  {playlist.pro_required && (
+                    <Link href="/pro" className="btn-ghost !px-3 !py-1.5 text-xs !text-cyan-glow">
+                      ⋯ {playlist.total_count - playlist.count} more with Pro
+                    </Link>
+                  )}
                   <button
                     type="button"
                     className="btn-ghost !px-3 !py-1.5 text-xs"

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AdSlot from "../../components/AdSlot";
 import SitesDirectory from "../../components/SitesDirectory";
 
 export const metadata: Metadata = {
@@ -20,6 +21,9 @@ export default function SitesPage() {
       </p>
       <div className="mt-8">
         <SitesDirectory />
+      </div>
+      <div className="mt-10">
+        <AdSlot slot={process.env.NEXT_PUBLIC_ADSENSE_SLOT_SITES} />
       </div>
     </div>
   );

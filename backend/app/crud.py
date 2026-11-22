@@ -1,9 +1,10 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import DownloadJob, Provider
+from .models import DownloadJob, LicenseKey, Provider, utcnow
 from .schemas import ProviderCreate, ProviderUpdate
 
 
@@ -68,3 +69,45 @@ async def create_job(db: AsyncSession, job: DownloadJob) -> DownloadJob:
 async def list_jobs(db: AsyncSession, limit: int = 50) -> list[DownloadJob]:
     result = await db.execute(select(DownloadJob).order_by(DownloadJob.created_at.desc()).limit(limit))
     return list(result.scalars().all())
+
+
+async def valid_license(db: AsyncSession, key: str) -> LicenseKey | None:
+    if not key:
+        return None
+    license = await db.get(LicenseKey, key.strip())
+    if license is None or not license.is_active:
+        return None
+    if license.expires_at is not None:
+        expires = license.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires < utcnow():
+            return None
+    return license
+
+
+async def list_licenses(db: AsyncSession, limit: int = 200) -> list[LicenseKey]:
+    result = await db.execute(select(LicenseKey).order_by(LicenseKey.created_at.desc()).limit(limit))
+    return list(result.scalars().all())
+
+
+async def create_license(db: AsyncSession, plan: str, days: int | None, note: str | None) -> LicenseKey:
+    import secrets
+
+    key = f"VDPRO-{secrets.token_hex(5).upper()}"
+    license = LicenseKey(
+        key=key,
+        plan=plan or "pro",
+        note=note,
+        is_active=True,
+        expires_at=(datetime.now(timezone.utc) + timedelta(days=days)) if days else None,
+    )
+    db.add(license)
+    await db.commit()
+    await db.refresh(license)
+    return license
+
+
+async def deactivate_license(db: AsyncSession, license_key: LicenseKey) -> None:
+    license_key.is_active = False
+    await db.commit()

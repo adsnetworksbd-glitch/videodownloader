@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 60
     rate_limit_window: int = 60
     free_daily_limit: int = 100
+    pro_daily_limit: int = 1000
+    free_playlist_items: int = 10
 
 
 @lru_cache

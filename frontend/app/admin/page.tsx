@@ -35,6 +35,16 @@ type AdminStats = {
   trending: { domain: string; downloads: number }[];
 };
 
+type License = {
+  key: string;
+  plan: string;
+  note: string | null;
+  is_active: boolean;
+  expires_at: string | null;
+  redeemed_at: string | null;
+  created_at: string;
+};
+
 type FormState = {
   name: string;
   adapter: string;
@@ -66,6 +76,9 @@ export default function AdminPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [licenses, setLicenses] = useState<License[]>([]);
+  const [licenseForm, setLicenseForm] = useState<{ days: number | string; note: string }>({ days: 30, note: "" });
+  const [lastKey, setLastKey] = useState("");
 
   const authed = Boolean(token) && Boolean(providers);
 
@@ -85,6 +98,17 @@ export default function AdminPage() {
       clearInterval(timer);
     };
   }, [authed]);
+
+  const loadLicenses = useCallback(async () => {
+    if (!authed) return;
+    try {
+      setLicenses(await apiFetch<License[]>("/api/admin/licenses", { admin: true }));
+    } catch {}
+  }, [authed]);
+
+  useEffect(() => {
+    loadLicenses();
+  }, [loadLicenses]);
 
   const load = useCallback(async (activeToken?: string) => {
     const saved = activeToken ?? getAdminToken();
@@ -290,6 +314,144 @@ export default function AdminPage() {
           )}
         </div>
       )}
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold">
+            Pro <span className="gradient-text">licenses</span>
+          </h2>
+          <Link href="/pro" className="text-xs font-semibold text-brand hover:text-cyan-glow">
+            View the Pro page →
+          </Link>
+        </div>
+        <form
+          className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setError("");
+            setMessage("");
+            try {
+              const created = await apiFetch<License>("/api/admin/licenses", {
+                method: "POST",
+                body: { plan: "pro", days: Number(licenseForm.days) || null, note: licenseForm.note || null },
+                admin: true,
+              });
+              setLastKey(created.key);
+              setLicenseForm({ days: 30, note: "" });
+              setMessage(`License created — copy it now: ${created.key}`);
+              await loadLicenses();
+            } catch (err) {
+              setError((err as Error).message);
+            }
+          }}
+        >
+          <div className="w-full sm:w-32">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-secondary/70" htmlFor="license-days">
+              Valid days
+            </label>
+            <input
+              id="license-days"
+              className="field"
+              type="number"
+              min={1}
+              max={3650}
+              value={licenseForm.days}
+              onChange={(e) => setLicenseForm({ ...licenseForm, days: e.target.value })}
+            />
+          </div>
+          <div className="grow">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-secondary/70" htmlFor="license-note">
+              Note (customer)
+            </label>
+            <input
+              id="license-note"
+              className="field"
+              placeholder="customer email or bKash ref"
+              value={licenseForm.note}
+              onChange={(e) => setLicenseForm({ ...licenseForm, note: e.target.value })}
+              maxLength={255}
+            />
+          </div>
+          <button type="submit" className="btn-primary">Generate key</button>
+        </form>
+        {lastKey && (
+          <div className="mt-3 flex items-center gap-3 rounded-xl border border-cyan-glow/40 bg-cyan-glow/10 px-4 py-3">
+            <code className="font-mono text-sm font-bold text-cyan-glow">{lastKey}</code>
+            <button
+              type="button"
+              className="btn-ghost !px-3 !py-1 text-xs"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(lastKey);
+                  setMessage("Key copied to clipboard.");
+                } catch {}
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        )}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-widest text-secondary/70">
+                <th className="px-3 py-2">Key</th>
+                <th className="px-3 py-2">Expires</th>
+                <th className="px-3 py-2">Redeemed</th>
+                <th className="px-3 py-2">State</th>
+                <th className="px-3 py-2">Note</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {licenses.map((license) => (
+                <tr key={license.key} className="border-t border-white/5">
+                  <td className="px-3 py-2 font-mono text-xs">{license.key}</td>
+                  <td className="px-3 py-2 text-xs text-secondary">
+                    {license.expires_at ? new Date(license.expires_at).toLocaleDateString("en-US") : "no expiry"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-secondary">
+                    {license.redeemed_at ? new Date(license.redeemed_at).toLocaleDateString("en-US") : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`pill-flow ${license.is_active ? "border-emerald-500/40 text-emerald-300" : "border-white/15 text-secondary"}`}>
+                      {license.is_active ? "active" : "inactive"}
+                    </span>
+                  </td>
+                  <td className="max-w-[180px] truncate px-3 py-2 text-xs text-secondary">{license.note || "—"}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      className="btn-ghost !px-2.5 !py-1 text-[11px]"
+                      onClick={async () => {
+                        try {
+                          await apiFetch(`/api/admin/licenses/${license.key}`, {
+                            method: "PATCH",
+                            body: { is_active: !license.is_active },
+                            admin: true,
+                          });
+                          await loadLicenses();
+                        } catch (err) {
+                          setError((err as Error).message);
+                        }
+                      }}
+                    >
+                      {license.is_active ? "Disable" : "Enable"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {licenses.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-xs text-secondary">
+                    No licenses yet — generate the first one above.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {message && (
         <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300" role="status">

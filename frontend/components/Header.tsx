@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { setLang, tt, useLang, type Lang } from "../lib/lang";
+import ProBadge from "./ProBadge";
 import { DownloadIcon } from "./icons";
 
 const NAV = [
@@ -45,6 +46,7 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <ProBadge />
           <select
             aria-label="Language"
             className="hidden rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-secondary outline-none sm:block"
