@@ -1,7 +1,9 @@
 import asyncio
+import functools
 import glob
 import json
 import os
+import shutil
 import tempfile
 from datetime import datetime, timezone
 
@@ -23,7 +25,23 @@ def _semaphore() -> asyncio.Semaphore:
     return _ytdlp_sema
 
 
-def _format_for(quality: str | None) -> str:
+@functools.lru_cache(maxsize=1)
+def _has_ffmpeg() -> bool:
+    return shutil.which("ffmpeg") is not None
+
+
+def _format_for(quality: str | None, has_ffmpeg: bool | None = None) -> str:
+    if has_ffmpeg is None:
+        has_ffmpeg = _has_ffmpeg()
+    if not has_ffmpeg:
+        default = "best"
+        if not quality:
+            return default
+        normalized = str(quality).strip().lower().removesuffix("p")
+        if not normalized.isdigit():
+            return default
+        height = int(normalized)
+        return f"best[height<={height}][ext=mp4]/best[height<={height}]/best"
     default = get_settings().ytdlp_format
     if not quality:
         return default
@@ -41,6 +59,8 @@ def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir
     """Blocking yt-dlp download. Returns {"filepath", "filename"}. progress_cb(done, total) is thread-safe."""
     import yt_dlp
 
+    has_ffmpeg = _has_ffmpeg()
+
     def hook(data):
         if data.get("status") == "downloading":
             done = data.get("downloaded_bytes") or 0
@@ -51,7 +71,7 @@ def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir
                 pass
 
     options = {
-        "format": "bestaudio/best" if audio_only else _format_for(quality),
+        "format": "bestaudio/best" if audio_only else _format_for(quality, has_ffmpeg),
         "outtmpl": {"default": os.path.join(jobs_dir, f"{job_id}.%(ext)s")},
         "noplaylist": True,
         "quiet": True,
@@ -63,7 +83,7 @@ def ytdlp_download_sync(job_id: str, resource: str, provider: Provider, jobs_dir
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         "merge_output_format": "mp4",
     }
-    if audio_only:
+    if audio_only and has_ffmpeg:
         options["postprocessors"] = [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}
         ]

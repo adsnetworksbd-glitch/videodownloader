@@ -291,14 +291,14 @@ export default function DownloadPanel() {
                     <>
                       <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-secondary/70">Audio</p>
                       <button type="button" onClick={() => setSelected("audio")} className={`chip mt-2 ${selected === "audio" ? "chip-selected" : ""}`} disabled={checking}>
-                        Audio only (MP3)
+                        Audio only (MP3/M4A)
                       </button>
                     </>
                   )}
 
                   <button type="button" className="btn-primary mt-5 w-full sm:w-auto" onClick={() => startDownload(selected)} disabled={checking}>
                     <DownloadIcon className="h-4 w-4" />
-                    Download {selected === "audio" ? "MP3" : selected === "best" ? "best quality" : selected}
+                    Download {selected === "audio" ? "audio" : selected === "best" ? "best quality" : selected}
                   </button>
                 </div>
               </div>

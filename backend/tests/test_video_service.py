@@ -118,11 +118,18 @@ async def test_quality_is_persisted_and_passed_to_ytdlp(client, monkeypatch):
 
 
 def test_format_for_quality():
-    default = vs._format_for(None)
-    assert vs._format_for("") == default
-    assert vs._format_for("garbage") == default
-    assert "height<=720" in vs._format_for("720p")
-    assert "height<=1080" in vs._format_for("1080")
+    default = vs._format_for(None, True)
+    assert vs._format_for("", True) == default
+    assert vs._format_for("garbage", True) == default
+    assert "height<=720" in vs._format_for("720p", True)
+    assert "height<=1080" in vs._format_for("1080", True)
+
+
+def test_format_without_ffmpeg_never_requests_merge():
+    assert "+" not in vs._format_for("720p", False)
+    assert "height<=720" in vs._format_for("720p", False)
+    assert vs._format_for(None, False) == "best"
+    assert "+" not in vs._format_for(None, False)
 
 
 async def test_provider_cookies_are_masked(client):
