@@ -52,6 +52,10 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _migrate(engine)
+    from .crud import ensure_default_providers
+
+    async with session_maker()() as session:
+        await ensure_default_providers(session)
 
 
 async def _migrate(engine: AsyncEngine) -> None:

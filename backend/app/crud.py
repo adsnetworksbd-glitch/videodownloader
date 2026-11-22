@@ -8,6 +8,21 @@ from .models import ApiKey, BannedIP, ContactMessage, DownloadEvent, DownloadJob
 from .schemas import ContactMessageIn, ProviderCreate, ProviderUpdate
 
 
+async def ensure_default_providers(db: AsyncSession) -> None:
+    count = await db.scalar(select(func.count()).select_from(Provider))
+    if count:
+        return
+    db.add(
+        Provider(
+            name="yt-dlp (all sites)",
+            adapter="ytdlp",
+            base_url="https://all-sites.local/unused",
+            priority=1,
+        )
+    )
+    await db.commit()
+
+
 async def list_providers(db: AsyncSession, include_inactive: bool = True) -> list[Provider]:
     statement = select(Provider).order_by(Provider.priority, Provider.id)
     if not include_inactive:
