@@ -51,15 +51,16 @@ async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await _migrate(conn)
+    await _migrate(engine)
 
 
-async def _migrate(conn) -> None:
+async def _migrate(engine: AsyncEngine) -> None:
     statements = [
         "ALTER TABLE download_jobs ADD COLUMN quality VARCHAR(10)",
     ]
     for statement in statements:
         try:
-            await conn.execute(text(statement))
+            async with engine.begin() as conn:
+                await conn.execute(text(statement))
         except Exception:
             pass
