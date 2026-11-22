@@ -10,7 +10,7 @@ from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import list_jobs, valid_license
+from ..crud import effective_int, list_jobs, valid_license
 from ..database import get_db
 from ..models import DownloadJob, utcnow
 from ..provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError, manager
@@ -24,25 +24,23 @@ router = APIRouter(prefix="/api/downloads", tags=["downloads"])
 _daily_counts: dict[str, tuple[str, int]] = {}
 
 
-def _check_daily_limit(request: Request, limit: int) -> tuple[str, str]:
+def _check_daily_limit(request: Request, limit: int, kind: str) -> None:
     if limit <= 0:
-        return ("ip", "")
+        return
     ip = request.client.host if request.client else "unknown"
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     entry = _daily_counts.get(ip)
     count = entry[1] if entry and entry[0] == today else 0
     if count >= limit:
-        kind = "pro" if limit == get_settings().pro_daily_limit else "free"
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail=(
                 f"Your Pro limit of {limit} downloads per day is reached. Try again tomorrow."
                 if kind == "pro"
-                else f"Daily free limit of {limit} downloads reached. Go Pro for 1000/day or try again tomorrow."
+                else f"Daily free limit of {limit} downloads reached. Go Pro for more, or try again tomorrow."
             ),
         )
     _daily_counts[ip] = (today, count + 1)
-    return (ip, today)
 
 
 async def _get_job(db: AsyncSession, job_id: str) -> DownloadJob:
@@ -54,10 +52,15 @@ async def _get_job(db: AsyncSession, job_id: str) -> DownloadJob:
 
 @router.post("", response_model=DownloadJobOut, status_code=status.HTTP_201_CREATED)
 async def create_download(data: DownloadCreate, request: Request, db: AsyncSession = Depends(get_db)):
-    license = await valid_license(db, request.headers.get("x-user-key") or "")
     settings = get_settings()
-    limit = settings.pro_daily_limit if license else settings.free_daily_limit
-    _check_daily_limit(request, limit)
+    license = await valid_license(db, request.headers.get("x-user-key") or "")
+    if license:
+        limit = await effective_int(db, "pro_daily_limit", settings.pro_daily_limit)
+        kind = "pro"
+    else:
+        limit = await effective_int(db, "free_daily_limit", settings.free_daily_limit)
+        kind = "free"
+    _check_daily_limit(request, limit, kind)
     if data.resource.startswith(("http://", "https://")):
         try:
             await asyncio.to_thread(assert_public_url, data.resource)

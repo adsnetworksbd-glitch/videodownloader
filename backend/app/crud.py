@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import DownloadJob, LicenseKey, Provider, utcnow
+from .models import DownloadJob, LicenseKey, Provider, SiteSetting, utcnow
 from .schemas import ProviderCreate, ProviderUpdate
 
 
@@ -111,3 +111,38 @@ async def create_license(db: AsyncSession, plan: str, days: int | None, note: st
 async def deactivate_license(db: AsyncSession, license_key: LicenseKey) -> None:
     license_key.is_active = False
     await db.commit()
+
+
+SETTING_WHITELIST: dict[str, str] = {
+    "free_daily_limit": "int",
+    "pro_daily_limit": "int",
+    "free_playlist_items": "int",
+    "rate_limit_requests": "int",
+    "rate_limit_window": "int",
+    "notice_message": "text",
+}
+
+
+async def get_overrides(db: AsyncSession) -> dict[str, str]:
+    result = await db.execute(select(SiteSetting))
+    return {setting.key: setting.value for setting in result.scalars().all()}
+
+
+async def set_setting(db: AsyncSession, key: str, value: str) -> None:
+    setting = await db.get(SiteSetting, key)
+    if setting is None:
+        setting = SiteSetting(key=key, value=value)
+        db.add(setting)
+    else:
+        setting.value = value
+    await db.commit()
+
+
+async def effective_int(db: AsyncSession, key: str, default: int) -> int:
+    setting = await db.get(SiteSetting, key)
+    if setting is None:
+        return default
+    try:
+        return max(0, int(setting.value))
+    except ValueError:
+        return default

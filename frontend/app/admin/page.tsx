@@ -45,6 +45,36 @@ type License = {
   created_at: string;
 };
 
+type AdminJob = {
+  id: string;
+  resource: string;
+  status: string;
+  quality: string | null;
+  filename: string | null;
+  error: string | null;
+  content_length: number | null;
+  created_at: string;
+};
+
+const SETTING_FIELDS: { key: string; label: string; hint: string }[] = [
+  { key: "free_daily_limit", label: "Free daily limit", hint: "Downloads per IP per day without Pro" },
+  { key: "pro_daily_limit", label: "Pro daily limit", hint: "Downloads per day for Pro users" },
+  { key: "free_playlist_items", label: "Free playlist items", hint: "Playlist items free users can grab" },
+  { key: "rate_limit_requests", label: "Rate limit requests", hint: "Requests per window (needs restart)" },
+  { key: "rate_limit_window", label: "Rate limit window (s)", hint: "Window length in seconds (needs restart)" },
+];
+
+const SETTING_DEFAULTS: Record<string, string> = {
+  free_daily_limit: "100",
+  pro_daily_limit: "1000",
+  free_playlist_items: "10",
+  rate_limit_requests: "60",
+  rate_limit_window: "60",
+  notice_message: "",
+};
+
+const JOB_TERMINAL = new Set(["failed", "ready", "completed"]);
+
 type FormState = {
   name: string;
   adapter: string;
@@ -79,6 +109,8 @@ export default function AdminPage() {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [licenseForm, setLicenseForm] = useState<{ days: number | string; note: string }>({ days: 30, note: "" });
   const [lastKey, setLastKey] = useState("");
+  const [settings, setSettings] = useState<Record<string, string>>(SETTING_DEFAULTS);
+  const [jobs, setJobs] = useState<AdminJob[]>([]);
 
   const authed = Boolean(token) && Boolean(providers);
 
@@ -109,6 +141,68 @@ export default function AdminPage() {
   useEffect(() => {
     loadLicenses();
   }, [loadLicenses]);
+
+  const loadSettings = useCallback(async () => {
+    if (!authed) return;
+    try {
+      const data = await apiFetch<Record<string, string>>("/api/admin/settings", { admin: true });
+      setSettings({ ...SETTING_DEFAULTS, ...data });
+    } catch {}
+  }, [authed]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  const loadJobs = useCallback(async () => {
+    if (!authed) return;
+    try {
+      setJobs(await apiFetch<AdminJob[]>("/api/admin/jobs?limit=20", { admin: true }));
+    } catch {}
+  }, [authed]);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
+
+  async function saveSettings(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    try {
+      const payload: Record<string, string> = {};
+      for (const field of SETTING_FIELDS) payload[field.key] = String(settings[field.key] ?? "");
+      payload.notice_message = settings.notice_message || "";
+      await apiFetch("/api/admin/settings", { method: "PUT", body: payload, admin: true });
+      setMessage("Site settings saved. Rate limit values apply after backend restart; the rest apply instantly.");
+      await loadSettings();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function deleteJob(jobId: string) {
+    if (!window.confirm("Delete this job and its file?")) return;
+    setError("");
+    try {
+      await apiFetch(`/api/admin/jobs/${jobId}`, { method: "DELETE", admin: true });
+      await loadJobs();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function retryJob(jobId: string) {
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/api/admin/jobs/${jobId}/retry`, { method: "POST", admin: true });
+      setMessage("Job re-queued.");
+      await loadJobs();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   const load = useCallback(async (activeToken?: string) => {
     const saved = activeToken ?? getAdminToken();
@@ -445,6 +539,125 @@ export default function AdminPage() {
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-xs text-secondary">
                     No licenses yet — generate the first one above.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <h2 className="text-lg font-bold">
+          Site <span className="gradient-text">settings</span>
+        </h2>
+        <p className="mt-1 text-xs text-secondary">
+          Limits apply instantly. Rate limit values take effect after a backend restart.
+        </p>
+        <form className="mt-4" onSubmit={saveSettings}>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {SETTING_FIELDS.map((field) => (
+              <label key={field.key} className="block">
+                <span className="mb-1.5 block text-xs text-secondary">{field.label}</span>
+                <input
+                  type="number"
+                  min={0}
+                  className="field"
+                  value={settings[field.key] ?? ""}
+                  onChange={(e) => setSettings({ ...settings, [field.key]: e.target.value })}
+                />
+                <span className="mt-1 block text-[11px] text-secondary/70">{field.hint}</span>
+              </label>
+            ))}
+          </div>
+          <label className="mt-3 block">
+            <span className="mb-1.5 block text-xs text-secondary">Site notice (empty = hidden)</span>
+            <textarea
+              className="field min-h-[70px]"
+              rows={2}
+              maxLength={500}
+              placeholder="Maintenance tonight at 2 AM BST"
+              value={settings.notice_message || ""}
+              onChange={(e) => setSettings({ ...settings, notice_message: e.target.value })}
+            />
+            <span className="mt-1 block text-[11px] text-secondary/70">
+              Shows a dismissible announcement bar on every page for all visitors.
+            </span>
+          </label>
+          <button type="submit" className="btn-primary mt-4">Save settings</button>
+        </form>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-bold">
+            Recent <span className="gradient-text">jobs</span>
+          </h2>
+          <button type="button" className="btn-ghost !px-3 !py-1 text-xs" onClick={() => loadJobs()}>
+            Refresh
+          </button>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-widest text-secondary/70">
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">File / Source</th>
+                <th className="px-3 py-2">Quality</th>
+                <th className="px-3 py-2">Size</th>
+                <th className="px-3 py-2">Created</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id} className="border-t border-white/5">
+                  <td className="px-3 py-2">
+                    <span
+                      className={`pill-flow ${
+                        job.status === "failed"
+                          ? "border-red-500/40 text-red-300"
+                          : job.status === "ready" || job.status === "completed"
+                            ? "border-emerald-500/40 text-emerald-300"
+                            : "border-cyan-glow/40 text-cyan-glow"
+                      }`}
+                    >
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="max-w-[260px] truncate px-3 py-2 text-xs">
+                    {job.filename || job.resource}
+                    <span className="block truncate text-secondary/60">{job.id}</span>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-secondary">{job.quality || "—"}</td>
+                  <td className="px-3 py-2 text-xs text-secondary">
+                    {job.content_length ? `${(job.content_length / 1024 / 1024).toFixed(1)} MB` : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-secondary">
+                    {new Date(job.created_at).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-2">
+                      {JOB_TERMINAL.has(job.status) && (
+                        <button type="button" className="btn-ghost !px-2.5 !py-1 text-[11px]" onClick={() => retryJob(job.id)}>
+                          Retry
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn-ghost !px-2.5 !py-1 text-[11px] !border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                        onClick={() => deleteJob(job.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {jobs.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-3 py-6 text-center text-xs text-secondary">
+                    No jobs yet.
                   </td>
                 </tr>
               )}

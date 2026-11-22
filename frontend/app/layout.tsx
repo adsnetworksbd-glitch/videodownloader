@@ -4,6 +4,7 @@ import BanglaBanner from "../components/BanglaBanner";
 import DownloadsHud from "../components/DownloadsHud";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
+import SiteNotice from "../components/SiteNotice";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.SITE_URL || "http://localhost:3000"),
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           />
         ) : null}
         <Header />
+        <SiteNotice />
         <main className="grow">{children}</main>
         <Footer />
         <BanglaBanner />

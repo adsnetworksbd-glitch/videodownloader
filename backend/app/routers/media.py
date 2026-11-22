@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
-from ..crud import valid_license
+from ..crud import effective_int, valid_license
 from ..database import get_db
 from ..providers import VideoResolutionError
 from ..providers.ytdlp import extract_info_sync
@@ -63,7 +63,8 @@ async def playlist(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="not a playlist url")
 
     license = await valid_license(db, request.headers.get("x-user-key") or "")
-    effective_limit = limit if license else min(limit, get_settings().free_playlist_items)
+    free_cap = await effective_int(db, "free_playlist_items", get_settings().free_playlist_items)
+    effective_limit = limit if license else max(1, min(limit, free_cap))
 
     items = []
     for entry in raw_entries[:effective_limit]:

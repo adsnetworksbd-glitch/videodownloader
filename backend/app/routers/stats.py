@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..crud import list_jobs, list_providers
+from ..crud import get_overrides, list_jobs, list_providers
 from ..database import get_db
 from ..deps import require_admin
 from ..models import DownloadJob
@@ -53,6 +53,12 @@ async def public_stats(db: AsyncSession = Depends(get_db)):
         "providers_up": up,
         "trending": [{"domain": domain, "downloads": count} for domain, count in top],
     }
+
+
+@public_router.get("/notice")
+async def site_notice(db: AsyncSession = Depends(get_db)):
+    overrides = await get_overrides(db)
+    return {"message": (overrides.get("notice_message") or "").strip()}
 
 
 @admin_router.get("/stats")
