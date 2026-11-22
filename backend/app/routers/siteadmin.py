@@ -7,27 +7,42 @@ from ..crud import (
     SETTING_WHITELIST,
     ban_ip,
     delete_message,
+    delete_order,
+    delete_package,
+    list_orders,
     effective_int,
     get_overrides,
     list_banned,
     list_jobs,
     list_licenses,
+    list_packages,
     list_messages,
     list_providers,
     mark_message_read,
+    set_order_status,
     set_setting,
     unban_ip,
 )
 from ..database import get_db
 from ..deps import require_admin
-from ..models import BannedIP, ContactMessage, DownloadJob, Provider, utcnow
-from ..schemas import BanIn, BanOut, ContactMessageOut, DownloadJobOut
+from ..models import BannedIP, ContactMessage, DownloadJob, ProPackage, Provider, utcnow
+from ..schemas import (
+    BanIn,
+    BanOut,
+    ContactMessageOut,
+    DownloadJobOut,
+    ProOrderOut,
+    ProOrderStatusUpdate,
+    ProPackageCreate,
+    ProPackageOut,
+    ProPackageUpdate,
+)
 from ..services.video_service import schedule_video_download
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/api/admin", tags=["site-admin"], dependencies=[Depends(require_admin)])
 
-_INT_BOUNDS = {"free_daily_limit": 1000000, "pro_daily_limit": 1000000, "free_playlist_items": 500, "rate_limit_requests": 10000, "rate_limit_window": 86400}
+_INT_BOUNDS = {"pro_instant_activation": 1, "free_daily_limit": 1000000, "pro_daily_limit": 1000000, "free_playlist_items": 500, "rate_limit_requests": 10000, "rate_limit_window": 86400}
 
 
 @router.get("/settings")
@@ -175,3 +190,56 @@ async def export_data(db: AsyncSession = Depends(get_db)):
         "bans": [{"ip": ban.ip, "reason": ban.reason} for ban in bans],
         "settings": await get_overrides(db),
     }
+
+
+@router.get("/packages", response_model=list[ProPackageOut])
+async def admin_packages(db: AsyncSession = Depends(get_db)):
+    return await list_packages(db, active_only=False)
+
+
+@router.post("/packages", response_model=ProPackageOut, status_code=status.HTTP_201_CREATED)
+async def add_package(data: ProPackageCreate, db: AsyncSession = Depends(get_db)):
+    package = ProPackage(**data.model_dump())
+    db.add(package)
+    await db.commit()
+    await db.refresh(package)
+    return package
+
+
+@router.patch("/packages/{package_id}", response_model=ProPackageOut)
+async def edit_package(package_id: int, data: ProPackageUpdate, db: AsyncSession = Depends(get_db)):
+    package = await db.get(ProPackage, package_id)
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="package not found")
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(package, key, value)
+    await db.commit()
+    await db.refresh(package)
+    return package
+
+
+@router.delete("/packages/{package_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_package(package_id: int, db: AsyncSession = Depends(get_db)):
+    package = await db.get(ProPackage, package_id)
+    if package is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="package not found")
+    await delete_package(db, package)
+
+
+@router.get("/orders", response_model=list[ProOrderOut])
+async def admin_orders(limit: int = Query(default=200, ge=1, le=500), db: AsyncSession = Depends(get_db)):
+    return await list_orders(db, limit=limit)
+
+
+@router.patch("/orders/{order_id}", response_model=ProOrderOut)
+async def update_order(order_id: int, data: ProOrderStatusUpdate, db: AsyncSession = Depends(get_db)):
+    order = await set_order_status(db, order_id, data.status)
+    if order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found")
+    return order
+
+
+@router.delete("/orders/{order_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_order(order_id: int, db: AsyncSession = Depends(get_db)):
+    if not await delete_order(db, order_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="order not found")

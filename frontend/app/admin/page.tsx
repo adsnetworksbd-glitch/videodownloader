@@ -75,12 +75,32 @@ type AdminJob = {
   created_at: string;
 };
 
+type ProPkg = {
+  id: number;
+  name: string;
+  price: number;
+  duration_days: number;
+  description: string | null;
+  is_active: boolean;
+};
+
+type ProOrderRow = {
+  id: number;
+  package_id: number | null;
+  txid: string;
+  contact: string | null;
+  status: string;
+  license_key: string | null;
+  created_at: string;
+};
+
 const SETTING_FIELDS: { key: string; label: string; hint: string }[] = [
   { key: "free_daily_limit", label: "Free daily limit", hint: "Downloads per IP per day without Pro" },
   { key: "pro_daily_limit", label: "Pro daily limit", hint: "Downloads per day for Pro users" },
   { key: "free_playlist_items", label: "Free playlist items", hint: "Playlist items free users can grab" },
   { key: "rate_limit_requests", label: "Rate limit requests", hint: "Requests per window (needs restart)" },
   { key: "rate_limit_window", label: "Rate limit window (s)", hint: "Window length in seconds (needs restart)" },
+  { key: "pro_instant_activation", label: "Instant key (1/0)", hint: "1 = key activates immediately on purchase; 0 = approve manually in Package orders" },
 ];
 
 const SETTING_DEFAULTS: Record<string, string> = {
@@ -89,6 +109,7 @@ const SETTING_DEFAULTS: Record<string, string> = {
   free_playlist_items: "10",
   rate_limit_requests: "60",
   rate_limit_window: "60",
+  pro_instant_activation: "1",
   notice_message: "",
 };
 
@@ -128,6 +149,9 @@ export default function AdminPage() {
   const [licenses, setLicenses] = useState<License[]>([]);
   const [licenseForm, setLicenseForm] = useState<{ days: number | string; note: string }>({ days: 30, note: "" });
   const [lastKey, setLastKey] = useState("");
+  const [proPackages, setProPackages] = useState<ProPkg[]>([]);
+  const [pkgForm, setPkgForm] = useState({ name: "", price: "", duration_days: "30", description: "" });
+  const [proOrders, setProOrders] = useState<ProOrderRow[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>(SETTING_DEFAULTS);
   const [jobs, setJobs] = useState<AdminJob[]>([]);
   const [messages, setMessages] = useState<AdminMessage[] | null>(null);
@@ -164,6 +188,90 @@ export default function AdminPage() {
   useEffect(() => {
     loadLicenses();
   }, [loadLicenses]);
+
+  const loadProData = useCallback(async () => {
+    if (!authed) return;
+    try {
+      const [pkgs, orders] = await Promise.all([
+        apiFetch<ProPkg[]>("/api/admin/packages", { admin: true }),
+        apiFetch<ProOrderRow[]>("/api/admin/orders?limit=200", { admin: true }),
+      ]);
+      setProPackages(pkgs);
+      setProOrders(orders);
+    } catch {}
+  }, [authed]);
+
+  useEffect(() => {
+    loadProData();
+  }, [loadProData]);
+
+  const createPackage = async () => {
+    setError("");
+    setMessage("");
+    const price = Number(pkgForm.price);
+    const days = Number(pkgForm.duration_days);
+    if (!pkgForm.name.trim() || !price || price <= 0 || !days || days <= 0) {
+      setError("Package name, price and valid days are required.");
+      return;
+    }
+    try {
+      await apiFetch("/api/admin/packages", {
+        method: "POST",
+        body: {
+          name: pkgForm.name.trim(),
+          price,
+          duration_days: days,
+          description: pkgForm.description.trim() || null,
+        },
+        admin: true,
+      });
+      setPkgForm({ name: "", price: "", duration_days: "30", description: "" });
+      setMessage("Package created - it is live on the /pro page now.");
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const patchPackage = async (pkg: ProPkg, changes: Record<string, unknown>) => {
+    try {
+      await apiFetch(`/api/admin/packages/${pkg.id}`, { method: "PATCH", body: changes, admin: true });
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const deletePackage = async (pkg: ProPkg) => {
+    if (!window.confirm(`Delete package "${pkg.name}"?`)) return;
+    try {
+      await apiFetch(`/api/admin/packages/${pkg.id}`, { method: "DELETE", admin: true });
+      setMessage("Package deleted.");
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const setOrderStatus = async (order: ProOrderRow, next: "completed" | "rejected") => {
+    try {
+      await apiFetch(`/api/admin/orders/${order.id}`, { method: "PATCH", body: { status: next }, admin: true });
+      setMessage(next === "completed" ? "Order completed - key is active for the buyer." : "Order rejected - key disabled.");
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const deleteOrder = async (order: ProOrderRow) => {
+    if (!window.confirm("Delete this order?")) return;
+    try {
+      await apiFetch(`/api/admin/orders/${order.id}`, { method: "DELETE", admin: true });
+      await loadProData();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   const loadSettings = useCallback(async () => {
     if (!authed) return;
@@ -647,6 +755,71 @@ export default function AdminPage() {
 
       <div className="glass mt-6 p-4 sm:p-6">
         <h2 className="text-lg font-bold">
+          Pro <span className="gradient-text">packages</span>
+        </h2>
+        <p className="mt-1 text-xs text-secondary">
+          Users pick a package on the /pro page, pay via bKash/Nagad and submit the TrxID - keys are issued instantly unless Instant key is set to 0 in Site settings.
+        </p>
+        <form
+          className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void createPackage();
+          }}
+        >
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-secondary">Package name</span>
+            <input className="field" placeholder="Monthly Pro" value={pkgForm.name} onChange={(e) => setPkgForm({ ...pkgForm, name: e.target.value })} maxLength={80} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-secondary">Price (৳)</span>
+            <input className="field" type="number" min={1} placeholder="199" value={pkgForm.price} onChange={(e) => setPkgForm({ ...pkgForm, price: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-secondary">Duration (days)</span>
+            <input className="field" type="number" min={1} max={3650} value={pkgForm.duration_days} onChange={(e) => setPkgForm({ ...pkgForm, duration_days: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs text-secondary">Description (optional)</span>
+            <input className="field" placeholder="1000 downloads / day" value={pkgForm.description} onChange={(e) => setPkgForm({ ...pkgForm, description: e.target.value })} maxLength={255} />
+          </label>
+          <button type="submit" className="btn-primary self-end">Add package</button>
+        </form>
+        <ul className="mt-4">
+          {proPackages.map((pkg) => (
+            <li key={pkg.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/5 py-2 text-sm">
+              <strong className="text-white">{pkg.name}</strong>
+              <span className="text-secondary">{pkg.price}৳ / {pkg.duration_days}d</span>
+              <span className="max-w-[240px] truncate text-xs text-secondary">{pkg.description || ""}</span>
+              <span className={`pill-flow ${pkg.is_active ? "border-emerald-500/40 text-emerald-300" : "border-white/15 text-secondary"}`}>
+                {pkg.is_active ? "visible" : "hidden"}
+              </span>
+              <span className="ml-auto flex gap-2">
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px]"
+                  onClick={() => void patchPackage(pkg, { is_active: !pkg.is_active })}
+                >
+                  {pkg.is_active ? "Hide" : "Show"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px] !border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                  onClick={() => void deletePackage(pkg)}
+                >
+                  Delete
+                </button>
+              </span>
+            </li>
+          ))}
+          {proPackages.length === 0 && (
+            <li className="px-2 py-6 text-center text-xs text-secondary">No packages yet - add one above and it appears on /pro instantly.</li>
+          )}
+        </ul>
+      </div>
+
+      <div className="glass mt-6 p-4 sm:p-6">
+        <h2 className="text-lg font-bold">
           Site <span className="gradient-text">settings</span>
         </h2>
         <p className="mt-1 text-xs text-secondary">
@@ -830,6 +1003,72 @@ export default function AdminPage() {
           ))}
           {messages !== null && messages.length === 0 && (
             <li className="px-2 py-6 text-center text-xs text-secondary">No messages in this tab yet.</li>
+          )}
+        </ul>
+        <h3 className="mt-6 text-sm font-bold uppercase tracking-widest text-secondary/80">
+          Package <span className="gradient-text">orders</span>
+        </h3>
+        <p className="mt-1 text-xs text-secondary">TrxID purchases from the /pro page. Approve completes the order and activates the key; reject disables it.</p>
+        <ul className="mt-3 space-y-3">
+          {proOrders.map((order) => (
+            <li
+              key={order.id}
+              className={`rounded-xl border p-3 ${
+                order.status === "pending"
+                  ? "border-amber-500/40 bg-amber-500/10"
+                  : order.status === "completed"
+                    ? "border-emerald-500/30 bg-emerald-500/5"
+                    : "border-red-500/30 bg-red-500/5"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                <span
+                  className={`pill-flow ${
+                    order.status === "completed"
+                      ? "border-emerald-500/40 text-emerald-300"
+                      : order.status === "pending"
+                        ? "border-amber-500/40 text-amber-300"
+                        : "border-red-500/40 text-red-300"
+                  }`}
+                >
+                  {order.status}
+                </span>
+                <code className="text-cyan-glow">TXID {order.txid}</code>
+                {order.contact && <span className="text-secondary">{order.contact}</span>}
+                {order.license_key && <code className="break-all font-mono text-white">{order.license_key}</code>}
+                <span className="ml-auto text-secondary/60">{new Date(order.created_at).toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {order.status !== "completed" && (
+                  <button
+                    type="button"
+                    className="btn-ghost !px-2.5 !py-1 text-[11px]"
+                    onClick={() => void setOrderStatus(order, "completed")}
+                  >
+                    Approve &amp; issue key
+                  </button>
+                )}
+                {order.status !== "rejected" && (
+                  <button
+                    type="button"
+                    className="btn-ghost !px-2.5 !py-1 text-[11px] !border-red-500/40 !text-red-300 hover:!bg-red-500/10"
+                    onClick={() => void setOrderStatus(order, "rejected")}
+                  >
+                    Reject
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn-ghost !px-2.5 !py-1 text-[11px]"
+                  onClick={() => void deleteOrder(order)}
+                >
+                  Delete
+                </button>
+              </div>
+            </li>
+          ))}
+          {proOrders.length === 0 && (
+            <li className="px-2 py-6 text-center text-xs text-secondary">No package orders yet.</li>
           )}
         </ul>
       </div>

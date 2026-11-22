@@ -157,6 +157,56 @@ class BanIn(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
 
 
+
+
+class ProPackageCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    price: int = Field(ge=1, le=1000000)
+    duration_days: int = Field(ge=1, le=3650)
+    description: str | None = Field(default=None, max_length=255)
+    is_active: bool = True
+    sort_order: int = Field(default=0, ge=0, le=10000)
+
+
+class ProPackageUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    price: int | None = Field(default=None, ge=1, le=1000000)
+    duration_days: int | None = Field(default=None, ge=1, le=3650)
+    description: str | None = Field(default=None, max_length=255)
+    is_active: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=10000)
+
+
+class ProPackageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    price: int
+    duration_days: int
+    description: str | None
+    is_active: bool
+    sort_order: int
+    created_at: datetime
+
+
+class ProOrderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    package_id: int | None
+    txid: str
+    contact: str | None
+    status: str
+    license_key: str | None
+    ip: str | None
+    created_at: datetime
+
+
+class ProOrderStatusUpdate(BaseModel):
+    status: str = Field(pattern="^(completed|rejected|pending)$")
+
+
 class BanOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

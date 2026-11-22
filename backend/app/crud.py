@@ -1,10 +1,10 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import BannedIP, ContactMessage, DownloadJob, LicenseKey, Provider, SiteSetting, utcnow
+from .models import BannedIP, ContactMessage, DownloadJob, LicenseKey, ProOrder, ProPackage, Provider, SiteSetting, utcnow
 from .schemas import ContactMessageIn, ProviderCreate, ProviderUpdate
 
 
@@ -120,6 +120,7 @@ SETTING_WHITELIST: dict[str, str] = {
     "rate_limit_requests": "int",
     "rate_limit_window": "int",
     "notice_message": "text",
+    "pro_instant_activation": "int",
 }
 
 
@@ -211,5 +212,51 @@ async def delete_message(db: AsyncSession, message_id: int) -> bool:
     if message is None:
         return False
     await db.delete(message)
+    await db.commit()
+    return True
+
+
+async def list_packages(db: AsyncSession, active_only: bool = False) -> list[ProPackage]:
+    statement = select(ProPackage).order_by(ProPackage.sort_order, ProPackage.id)
+    if active_only:
+        statement = statement.where(ProPackage.is_active)
+    result = await db.execute(statement)
+    return list(result.scalars().all())
+
+
+async def delete_package(db: AsyncSession, package: ProPackage) -> None:
+    await db.delete(package)
+    await db.commit()
+
+
+async def txid_taken(db: AsyncSession, txid: str) -> bool:
+    result = await db.execute(select(ProOrder).where(func.lower(ProOrder.txid) == txid.lower()))
+    return result.scalars().first() is not None
+
+
+async def list_orders(db: AsyncSession, limit: int = 200) -> list[ProOrder]:
+    result = await db.execute(select(ProOrder).order_by(ProOrder.id.desc()).limit(limit))
+    return list(result.scalars().all())
+
+
+async def set_order_status(db: AsyncSession, order_id: int, status: str) -> ProOrder | None:
+    order = await db.get(ProOrder, order_id)
+    if order is None:
+        return None
+    order.status = status
+    if order.license_key:
+        license = await db.get(LicenseKey, order.license_key)
+        if license is not None:
+            license.is_active = status == "completed"
+    await db.commit()
+    await db.refresh(order)
+    return order
+
+
+async def delete_order(db: AsyncSession, order_id: int) -> bool:
+    order = await db.get(ProOrder, order_id)
+    if order is None:
+        return False
+    await db.delete(order)
     await db.commit()
     return True
