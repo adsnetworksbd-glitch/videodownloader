@@ -127,3 +127,119 @@ async def test_info_endpoint(client, monkeypatch):
 
     bad = await client.get("/api/info?url=not-a-url")
     assert bad.status_code == 422
+
+
+def _formats_info() -> dict:
+    return {
+        "title": "Direct Test Video",
+        "extractor_key": "Youtube",
+        "ext": "mp4",
+        "url": "https://media.example.com/progressive.mp4",
+        "formats": [
+            {
+                "format_id": "dash-video-1080",
+                "ext": "mp4",
+                "url": "https://media.example.com/video-1080-only.mp4",
+                "height": 1080,
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "filesize": 90_000_000,
+            },
+            {
+                "format_id": "dash-audio",
+                "ext": "m4a",
+                "url": "https://media.example.com/audio-only.m4a",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "abr": 128,
+                "filesize": 4_000_000,
+            },
+            {
+                "format_id": "18",
+                "ext": "mp4",
+                "url": "https://media.example.com/progressive-360.mp4",
+                "height": 360,
+                "vcodec": "avc1.42001E",
+                "acodec": "mp4a.40.2",
+                "filesize": 10_000_000,
+            },
+            {
+                "format_id": "22",
+                "ext": "mp4",
+                "url": "https://media.example.com/progressive-720.mp4",
+                "height": 720,
+                "vcodec": "avc1.64001F",
+                "acodec": "mp4a.40.2",
+                "filesize": 30_000_000,
+            },
+        ],
+    }
+
+
+def _patch_extract(monkeypatch, info: dict) -> None:
+    def run_extract(url, timeout, fmt=None):
+        return info
+
+    monkeypatch.setattr("app.routers.videos.extract_info_sync", run_extract)
+
+
+async def test_direct_link_returns_progressive_format(client, monkeypatch):
+    _patch_extract(monkeypatch, _formats_info())
+
+    response = await client.get(
+        "/api/info/direct?url=https://www.youtube.com/watch?v=abc&quality=720p"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["direct"] is True
+    assert body["url"] == "https://media.example.com/progressive-720.mp4"
+    assert body["quality"] == "720p"
+    assert body["ext"] == "mp4"
+    assert body["filename"] == "Direct Test Video.mp4"
+
+
+async def test_direct_link_never_exceeds_requested_height(client, monkeypatch):
+    _patch_extract(monkeypatch, _formats_info())
+
+    response = await client.get(
+        "/api/info/direct?url=https://www.youtube.com/watch?v=abc&quality=480p"
+    )
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://media.example.com/progressive-360.mp4"
+
+
+async def test_direct_link_audio_uses_best_audio_track(client, monkeypatch):
+    _patch_extract(monkeypatch, _formats_info())
+
+    response = await client.get(
+        "/api/info/direct?url=https://www.youtube.com/watch?v=abc&quality=audio"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["url"] == "https://media.example.com/audio-only.m4a"
+    assert body["quality"] == "audio"
+    assert body["ext"] == "m4a"
+
+
+async def test_direct_link_falls_back_to_server_when_dash_only(client, monkeypatch):
+    dash_only = _formats_info()
+    dash_only["formats"] = [
+        fmt
+        for fmt in dash_only["formats"]
+        if fmt["format_id"] in ("dash-video-1080", "dash-audio")
+    ]
+    _patch_extract(monkeypatch, dash_only)
+
+    response = await client.get(
+        "/api/info/direct?url=https://www.youtube.com/watch?v=abc&quality=1080p"
+    )
+    assert response.status_code == 404
+    assert "no direct format" in response.json()["detail"]
+
+
+async def test_direct_link_best_quality(client, monkeypatch):
+    _patch_extract(monkeypatch, _formats_info())
+
+    response = await client.get("/api/info/direct?url=https://www.youtube.com/watch?v=abc")
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://media.example.com/progressive-720.mp4"

@@ -22,6 +22,7 @@ type Info = {
 };
 type PlaylistItem = { title: string | null; duration: number | null; thumbnail: string | null; url: string | null };
 type Playlist = { title: string | null; count: number; total_count: number; pro_required?: boolean; items: PlaylistItem[] };
+type DirectLink = { direct: boolean; url: string; ext: string; quality: string; filesize: number | null; filename: string };
 
 type Phase = "idle" | "checking" | "ready" | "starting" | "downloading" | "saving" | "completed" | "error";
 
@@ -88,6 +89,7 @@ export default function DownloadPanel() {
   const [playlistSel, setPlaylistSel] = useState<Set<string>>(new Set());
   const [playlistProgress, setPlaylistProgress] = useState<{ done: number; total: number; current: string | null } | null>(null);
   const [clipboardHint, setClipboardHint] = useState("");
+  const [directNote, setDirectNote] = useState("");
   const stepTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const confettiRef = useRef<HTMLDivElement | null>(null);
 
@@ -201,10 +203,41 @@ export default function DownloadPanel() {
     return filename;
   }
 
+  async function tryDirect(resource: string, quality: string): Promise<DirectLink | null> {
+    try {
+      return await apiFetch<DirectLink>(
+        `/api/info/direct?url=${encodeURIComponent(resource)}&quality=${encodeURIComponent(quality)}`
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function openDirect(link: DirectLink) {
+    const anchor = document.createElement("a");
+    anchor.href = link.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setDirectNote(
+      `Fast direct link opened in a new tab (${link.quality}${link.ext ? `, .${link.ext}` : ""}). If it plays instead of saving, use the player's download option or long-press the video.`
+    );
+  }
+
   async function downloadSingle(resource: string, quality: string, knownTitle: string | null) {
     setPhase("starting");
     setReceived(0);
     setTotal(null);
+    setDirectNote("");
+    const direct = await tryDirect(resource, quality);
+    if (direct) {
+      openDirect(direct);
+      setPhase("completed");
+      fireConfetti();
+      return;
+    }
     const job = await createJob(resource, quality, cookies);
     registerHudJob({ id: job.id, title: knownTitle || "Video", status: job.status, at: Date.now() });
 
@@ -251,6 +284,7 @@ export default function DownloadPanel() {
   async function downloadPlaylistItems(items: PlaylistItem[]) {
     if (items.length === 0) return;
     setError("");
+    setDirectNote("");
     setPhase("downloading");
     let ok = 0;
     for (let index = 0; index < items.length; index++) {
@@ -258,6 +292,12 @@ export default function DownloadPanel() {
       setPlaylistProgress({ done: index, total: items.length, current: item.title });
       let jobId = "unknown";
       try {
+        const direct = await tryDirect(item.url || "", "best");
+        if (direct) {
+          openDirect(direct);
+          ok += 1;
+          continue;
+        }
         const job = await createJob(item.url || "", "best", "");
         jobId = job.id;
         registerHudJob({ id: job.id, title: item.title || "Playlist item", status: job.status, at: Date.now() });
@@ -292,6 +332,7 @@ export default function DownloadPanel() {
     setInfo(null);
     setPlaylist(null);
     setError("");
+    setDirectNote("");
     setPhase("checking");
     setStep(0);
     if (stepTimer.current) clearInterval(stepTimer.current);
@@ -415,6 +456,12 @@ export default function DownloadPanel() {
         {error && (
           <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300" role="alert">
             {error}
+          </div>
+        )}
+
+        {directNote && (
+          <div className="mt-4 rounded-xl border border-cyan-glow/30 bg-cyan-glow/10 px-4 py-3 text-sm text-cyan-glow" role="status">
+            {directNote}
           </div>
         )}
 
