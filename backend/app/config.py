@@ -1,6 +1,8 @@
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -9,7 +11,7 @@ class Settings(BaseSettings):
     app_name: str = "Download Gateway"
     database_url: str = "sqlite+aiosqlite:///./gateway.db"
     admin_token: str = "change-me-local"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     provider_default_timeout: int = 30
     max_provider_attempts: int = 5
     chunk_size: int = 64 * 1024
@@ -26,6 +28,20 @@ class Settings(BaseSettings):
     admin_password: str = ""
     telegram_alert_chat_id: str = ""
     pro_instant_activation: int = 1
+
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, value):
+        if isinstance(value, str):
+            text = value.strip().strip("[]")
+            origins = []
+            for part in text.split(","):
+                origin = part.strip().strip("\"'").strip()
+                if origin:
+                    origins.append(origin)
+            return origins
+        return value
 
 
 @lru_cache
