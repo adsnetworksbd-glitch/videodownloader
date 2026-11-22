@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { resolveBrand } from "../lib/brand-lookup";
 
 type Site = { name: string; domain: string; category: string; status: string; formats: string[] };
 type CatalogResponse = { total: number; page: number; pages: number; items: Site[] };
@@ -77,8 +78,18 @@ export default function SitesDirectory() {
           <div key={site.domain + site.name} className="glass glass-hover p-4">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="truncate text-sm font-bold">{site.name}</p>
-                <p className="truncate text-xs text-secondary">{site.domain}</p>
+                {(() => {
+                  const brand = resolveBrand(site.name);
+                  return (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5">
+                        <brand.Icon className="h-3.5 w-3.5" style={{ color: brand.color }} />
+                      </span>
+                      <p className="truncate text-sm font-bold">{site.name}</p>
+                    </div>
+                  );
+                })()}
+                <p className="truncate pl-8 text-xs text-secondary">{site.domain}</p>
               </div>
               <span
                 className={`pill-flow shrink-0 ${

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { BrandGlyph } from "../lib/brand-lookup";
+import { BRANDS } from "../lib/brands";
 import {
   FacebookIcon,
   InstagramIcon,
@@ -26,6 +28,21 @@ const SHOWCASE = [
   { name: "Vimeo", Icon: VimeoIcon, color: "text-[#1AB7EA]" },
   { name: "Twitch", Icon: TwitchIcon, color: "text-[#9146FF]" },
   { name: "Snapchat", Icon: SnapchatIcon, color: "text-[#FFFC00]" },
+];
+
+const EXTRA_SLUGS = [
+  "dailymotion",
+  "soundcloud",
+  "telegram",
+  "threads",
+  "tumblr",
+  "vk",
+  "bilibili",
+  "odysee",
+  "rumble",
+  "ted",
+  "imdb",
+  "9gag",
 ];
 
 type Stats = { total_sites: number; verified_curated: number; categories: string[] };
@@ -67,6 +84,16 @@ export default function PlatformsShowcase() {
             <span className="truncate text-sm font-semibold">{name}</span>
           </div>
         ))}
+        {EXTRA_SLUGS.map((slug) => {
+          const brand = BRANDS[slug];
+          if (!brand) return null;
+          return (
+            <div key={slug} className="glass glass-hover flex items-center gap-3 px-4 py-3.5">
+              <BrandGlyph icon={brand} className="h-6 w-6 shrink-0" />
+              <span className="truncate text-sm font-semibold">{brand.title}</span>
+            </div>
+          );
+        })}
         <Link
           href="/sites"
           className="flex items-center justify-center gap-2 rounded-2xl border border-dashed border-brand/40 bg-brand/5 px-4 py-3.5 text-sm font-semibold text-brand transition-colors hover:bg-brand/10"

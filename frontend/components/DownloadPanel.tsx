@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { registerHudJob, updateHudJob } from "../lib/hud";
 import { tt, useLang } from "../lib/lang";
-import { CheckIcon, DownloadIcon, LinkIcon, FacebookIcon, InstagramIcon, PinterestIcon, RedditIcon, SnapchatIcon, TikTokIcon, TwitchIcon, VimeoIcon, XIcon, YouTubeIcon } from "./icons";
+import { CheckIcon, DownloadIcon, LinkIcon } from "./icons";
+import { resolveBrand } from "../lib/brand-lookup";
 
 type VideoFormat = { quality: string; ext: string | null; filesize: number | null; fps: number | null; has_audio: boolean };
 type Info = {
@@ -23,31 +24,6 @@ type Info = {
 type PlaylistItem = { title: string | null; duration: number | null; thumbnail: string | null; url: string | null };
 type Playlist = { title: string | null; count: number; total_count: number; pro_required?: boolean; items: PlaylistItem[] };
 type DirectLink = { direct: boolean; url: string; ext: string; quality: string; filesize: number | null; filename: string };
-
-type PlatformBrand = { name: string; Icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>; color: string };
-
-const PLATFORM_BRANDS: Record<string, PlatformBrand> = {
-  youtube: { name: "YouTube", Icon: YouTubeIcon, color: "#FF0000" },
-  facebook: { name: "Facebook", Icon: FacebookIcon, color: "#1877F2" },
-  instagram: { name: "Instagram", Icon: InstagramIcon, color: "#E4405F" },
-  tiktok: { name: "TikTok", Icon: TikTokIcon, color: "#FFFFFF" },
-  douyin: { name: "Douyin (TikTok China)", Icon: TikTokIcon, color: "#FFFFFF" },
-  twitter: { name: "X (Twitter)", Icon: XIcon, color: "#FFFFFF" },
-  pinterest: { name: "Pinterest", Icon: PinterestIcon, color: "#E60023" },
-  reddit: { name: "Reddit", Icon: RedditIcon, color: "#FF4500" },
-  vimeo: { name: "Vimeo", Icon: VimeoIcon, color: "#1AB7EA" },
-  twitch: { name: "Twitch", Icon: TwitchIcon, color: "#9146FF" },
-  snapchat: { name: "Snapchat", Icon: SnapchatIcon, color: "#FFFC00" },
-};
-
-function platformBrand(platform: string | null): PlatformBrand {
-  if (!platform) return { name: "Video", Icon: LinkIcon, color: "#00CFFF" };
-  const key = platform.toLowerCase();
-  if (PLATFORM_BRANDS[key]) return PLATFORM_BRANDS[key];
-  const match = Object.keys(PLATFORM_BRANDS).find((name) => key.startsWith(name));
-  if (match) return PLATFORM_BRANDS[match];
-  return { name: platform, Icon: LinkIcon, color: "#00CFFF" };
-}
 
 type Phase = "idle" | "checking" | "ready" | "starting" | "downloading" | "saving" | "completed" | "error";
 
@@ -601,7 +577,7 @@ export default function DownloadPanel() {
                 )}
                 <div className="min-w-0">
                   {(() => {
-                    const brand = platformBrand(info.platform);
+                    const brand = resolveBrand(info.platform);
                     return (
                       <div className="flex items-center gap-2">
                         <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5">
