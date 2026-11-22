@@ -169,8 +169,8 @@ falls back to opening the site when a server-side merge is needed. See
 - **CORS**: set `CORS_ORIGINS` to your real frontend origin(s).
 - The `BACKEND_URL` build arg for the frontend image is evaluated at **build time**; if the
   backend address changes, rebuild the admin image.
-- **Free hosting walkthrough (Bangla)**: see `docs/DEPLOY_FREE_BANGLA.md` — HF Spaces backend
-  (Docker payload in `deploy/hf-space/`) + Vercel frontend + Neon Postgres, zero cost.
+- **Free hosting walkthrough (Bangla)**: see `docs/DEPLOY_FREE_BANGLA.md` — Render backend
+  + Neon Postgres + Vercel frontend + UptimeRobot keep-alive, zero cost, no card.
 
 ## Known limitations
 

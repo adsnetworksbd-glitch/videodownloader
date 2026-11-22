@@ -8,7 +8,7 @@ from .config import get_settings
 from .database import init_db
 from .middleware.ratelimit import RateLimitMiddleware
 from .provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError
-from .routers import apiv1, catalog, contact, downloads, licenses, media, pro, providers, siteadmin, stats, videos
+from .routers import adminauth, apiv1, catalog, contact, downloads, licenses, media, pro, providers, siteadmin, stats, videos
 
 logging.basicConfig(level=logging.INFO)
 
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(pro.router)
     app.include_router(contact.router)
     app.include_router(apiv1.router)
+    app.include_router(adminauth.router)
 
     @app.get("/health", tags=["ops"])
     async def health():

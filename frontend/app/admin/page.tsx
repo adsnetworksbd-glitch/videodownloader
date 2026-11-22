@@ -151,6 +151,8 @@ const emptyForm: FormState = {
 
 export default function AdminPage() {
   const [token, setToken] = useState("");
+  const [loginMode, setLoginMode] = useState<"email" | "token">("email");
+  const [emailLogin, setEmailLogin] = useState({ email: "", password: "" });
   const [providers, setProviders] = useState<Provider[] | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -531,28 +533,84 @@ export default function AdminPage() {
         <h1 className="text-3xl font-extrabold">
           Admin <span className="gradient-text">sign-in</span>
         </h1>
-        <p className="mt-3 text-sm text-secondary">Enter the admin token (ADMIN_TOKEN of the backend) to manage providers.</p>
-        <form
-          className="glass mt-8 p-6"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setAdminToken(token);
-            setMessage("");
-            setError("");
-            await load(token);
-          }}
-        >
-          <input
-            className="field"
-            type="password"
-            placeholder="Admin token"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            autoComplete="current-password"
-          />
-          <button type="submit" className="btn-primary mt-4 w-full">Unlock</button>
-          {error && <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
-        </form>
+        <p className="mt-3 text-sm text-secondary">
+          Sign in with the admin email and password (set ADMIN_EMAIL and ADMIN_PASSWORD on the server), or use the master admin token.
+        </p>
+        <div className="mt-6 flex gap-2">
+          <button
+            type="button"
+            onClick={() => { setLoginMode("email"); setError(""); }}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold ${loginMode === "email" ? "bg-brand text-white" : "glass text-secondary"}`}
+          >Email + password</button>
+          <button
+            type="button"
+            onClick={() => { setLoginMode("token"); setError(""); }}
+            className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold ${loginMode === "token" ? "bg-brand text-white" : "glass text-secondary"}`}
+          >Admin token</button>
+        </div>
+        {loginMode === "email" ? (
+          <form
+            className="glass mt-4 p-6"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setMessage("");
+              setError("");
+              try {
+                const r = await apiFetch<{ session: string; expires_in_hours: number }>("/api/admin-auth/login", {
+                  method: "POST",
+                  body: { email: emailLogin.email, password: emailLogin.password },
+                });
+                setAdminToken(r.session);
+                setToken(r.session);
+                await load(r.session);
+              } catch (err) {
+                if (String(err instanceof Error ? err.message : err).includes("disabled")) setLoginMode("token");
+                setError(String(err instanceof Error ? err.message : err));
+              }
+            }}
+          >
+            <input
+              className="field"
+              type="email"
+              placeholder="you@gmail.com"
+              value={emailLogin.email}
+              onChange={(e) => setEmailLogin({ ...emailLogin, email: e.target.value })}
+              autoComplete="username"
+            />
+            <input
+              className="field mt-3"
+              type="password"
+              placeholder="Password"
+              value={emailLogin.password}
+              onChange={(e) => setEmailLogin({ ...emailLogin, password: e.target.value })}
+              autoComplete="current-password"
+            />
+            <button type="submit" className="btn-primary mt-4 w-full">Unlock</button>
+            {error && <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+          </form>
+        ) : (
+          <form
+            className="glass mt-4 p-6"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setAdminToken(token);
+              setMessage("");
+              setError("");
+              await load(token);
+            }}
+          >
+            <input
+              className="field"
+              type="password"
+              placeholder="Admin token"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              autoComplete="current-password"
+            />
+            <button type="submit" className="btn-primary mt-4 w-full">Unlock</button>
+            {error && <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
+          </form>
+        )}
         <Link href="/" className="mt-6 inline-block text-sm font-semibold text-brand hover:text-cyan-glow">
           ← Back to app
         </Link>
