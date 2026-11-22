@@ -71,7 +71,37 @@ def summarize(info: dict) -> dict:
         "webpage_url": entry.get("webpage_url"),
         "ext": entry.get("ext"),
         "filesize": entry.get("filesize") or entry.get("filesize_approx"),
+        **available_formats(entry),
     }
+
+
+def available_formats(entry: dict) -> dict:
+    raw_formats = entry.get("formats") or []
+    if not raw_formats and entry.get("height"):
+        raw_formats = [entry]
+    best: dict[int, dict] = {}
+    audio_only = False
+    for fmt in raw_formats:
+        if fmt.get("vcodec") == "none":
+            if fmt.get("acodec") not in (None, "none"):
+                audio_only = True
+            continue
+        height = fmt.get("height")
+        if not height:
+            continue
+        height = int(height)
+        size = fmt.get("filesize") or fmt.get("filesize_approx") or 0
+        current = best.get(height)
+        if current is None or size > (current.get("filesize") or 0):
+            best[height] = {
+                "quality": f"{height}p",
+                "ext": fmt.get("ext"),
+                "filesize": fmt.get("filesize") or fmt.get("filesize_approx"),
+                "fps": fmt.get("fps"),
+                "has_audio": fmt.get("acodec") not in (None, "none"),
+            }
+    formats = [best[height] for height in sorted(best, reverse=True)]
+    return {"formats": formats, "audio_only_available": audio_only or bool(formats) or bool(entry.get("acodec") not in (None, "none"))}
 
 
 class YtDlpAdapter(ProviderAdapter):

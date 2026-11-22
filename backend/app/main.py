@@ -6,8 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import init_db
+from .middleware.ratelimit import RateLimitMiddleware
 from .provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError
-from .routers import downloads, providers, videos
+from .routers import catalog, downloads, providers, videos
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,9 +33,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(RateLimitMiddleware, limit=settings.rate_limit_requests, window_seconds=settings.rate_limit_window)
     app.include_router(providers.router)
     app.include_router(downloads.router)
     app.include_router(videos.router)
+    app.include_router(catalog.router)
 
     @app.get("/health", tags=["ops"])
     async def health():

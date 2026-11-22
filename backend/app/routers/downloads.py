@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 
@@ -12,6 +13,7 @@ from ..database import get_db
 from ..models import DownloadJob, utcnow
 from ..provider_manager import AllProvidersFailedError, NoProviderError, UnknownAdapterError, manager
 from ..schemas import DownloadCreate, DownloadJobOut
+from ..security import UnsafeUrlError, assert_public_url
 from ..services.download_service import create_download_job, finish_stream
 from ..services.video_service import has_video_provider, schedule_video_download
 
@@ -27,6 +29,12 @@ async def _get_job(db: AsyncSession, job_id: str) -> DownloadJob:
 
 @router.post("", response_model=DownloadJobOut, status_code=status.HTTP_201_CREATED)
 async def create_download(data: DownloadCreate, db: AsyncSession = Depends(get_db)):
+    if data.resource.startswith(("http://", "https://")):
+        try:
+            await asyncio.to_thread(assert_public_url, data.resource)
+        except UnsafeUrlError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     job = await create_download_job(db, data.resource, audio_only=data.audio_only, quality=data.quality)
 
     chain = await manager.get_active_chain(db)
