@@ -51,6 +51,9 @@ const ALIASES: Record<string, string> = {
   vkwallpost: "vk",
   nbcnews: "nbc",
   douyin: "tiktok",
+  nicovideo: "niconico",
+  discordembeds: "discord",
+  discordunembeds: "discord",
 };
 
 export function resolveBrand(platform: string | null): BrandVisual {

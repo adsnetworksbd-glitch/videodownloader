@@ -43,6 +43,14 @@ const EXTRA_SLUGS = [
   "ted",
   "imdb",
   "9gag",
+  "discord",
+  "mastodon",
+  "bluesky",
+  "kick",
+  "niconico",
+  "odnoklassniki",
+  "flickr",
+  "loom",
 ];
 
 type Stats = { total_sites: number; verified_curated: number; categories: string[] };
